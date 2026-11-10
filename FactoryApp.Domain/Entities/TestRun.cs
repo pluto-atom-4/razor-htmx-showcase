@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace FactoryApp.Domain.Entities;
 
 public class TestRun
@@ -7,6 +9,8 @@ public class TestRun
     public TestStatus Status { get; set; } = TestStatus.Pending;
     public string? Result { get; set; }
     public string? FileUrl { get; set; }
+    [MaxLength(30)]
+    public string? FailureCode { get; set; }
     public DateTime? CompletedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
