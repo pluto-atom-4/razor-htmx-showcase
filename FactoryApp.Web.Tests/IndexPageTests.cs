@@ -3,13 +3,19 @@ using System.Net;
 namespace FactoryApp.Web.Tests;
 
 [Trait("Category", "Integration")]
-public class IndexPageTests : IClassFixture<WebAppFactory>
+public class IndexPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory>, IAsyncLifetime
 {
-    private readonly HttpClient _client;
+    private HttpClient _client = null!;
 
-    public IndexPageTests(WebAppFactory factory)
+    public async Task InitializeAsync()
     {
-        _client = factory.CreateClient();
+        _client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
+    }
+
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        return Task.CompletedTask;
     }
 
     [Fact]
