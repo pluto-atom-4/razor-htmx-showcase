@@ -74,11 +74,7 @@ public class FixtureSeederHistoryTests : IAsyncLifetime
         foreach (var run in runs)
         {
             var rows = rowsByRun.GetValueOrDefault(run.Id) ?? [];
-            if (rows.Count == 0)
-            {
-                Assert.Equal(TestStatus.Pending, run.Status);
-                continue;
-            }
+            Assert.NotEmpty(rows);
 
             AssertWalk(run.Status, rows, (TestStatus from, TestStatus to) => Transitions.IsAllowed(from, to));
             AssertTiming(rows);

@@ -8,7 +8,7 @@ namespace FactoryApp.Domain.TestFixtures;
 
 /// <summary>
 /// Programmatic seeding of development fixtures: users, builds, parts, test runs and workflow history.
-/// Every seed step is idempotent: rows with fixed Ids are added only when missing.
+/// Every seed step is idempotent: rows with fixed Ids are added only when missing, and seeded users get their password hash refreshed on each run.
 ///
 /// Usage:
 ///   if (app.Environment.IsDevelopment())
@@ -58,7 +58,6 @@ public class FixtureSeeder
         ("decimal-precision-test", "Decimal Precision Test Build", "Build with fractional quantity parts for precision testing (issue #132)")
     };
 
-    // StartHoursAgo: Pending->Running. DurationMinutes: Running->terminal, null while still open.
     private static readonly (string Key, string Name, string? Description, BuildStatus Status, int StartHoursAgo, int? DurationMinutes, string Operator, string? Error)[] LifecycleBuilds =
     {
         ("running-01", "Legacy System Migration", "Update legacy system components", BuildStatus.Running, 24, null, "test@example.com", null),
@@ -74,37 +73,27 @@ public class FixtureSeeder
         ("hist-f2", "History Build 7", null, BuildStatus.Failed, 168, 360, "test@example.com", "Sealant cure failed")
     };
 
-    // Test run N is the N-th entry (1-based); its Id is TestRunId(N). CompletedHoursAgo is null while running.
-    private static readonly (string Build, TestStatus Status, int? CompletedHoursAgo, int DurationMinutes, string Station, string Operator, string? FailureCode)[] TestRunSpecs =
+    // Position is the test run number: reordering changes the Ids and history keys.
+    private static readonly (string Build, TestStatus Status, int? CompletedHoursAgo, int DurationMinutes, string Station, string Operator, string? FailureCode, string? Result, string? FileUrl)[] TestRunSpecs =
     {
-        ("complete-01", TestStatus.Passed, 72, 25, "TEST-BAY-1", "test@example.com", null),
-        ("complete-01", TestStatus.Passed, 48, 40, "TEST-BAY-2", "admin@example.com", null),
-        ("failed-01", TestStatus.Failed, 24, 18, "TEST-BAY-1", "user@example.com", "SENSOR_FAULT"),
-        ("failed-01", TestStatus.Running, null, 30, "TEST-BAY-2", "admin@example.com", null),
-        ("hist-c1", TestStatus.Passed, 476, 20, "TEST-BAY-1", "test@example.com", null),
-        ("hist-c2", TestStatus.Passed, 378, 55, "TEST-BAY-2", "admin@example.com", null),
-        ("hist-c3", TestStatus.Failed, 280, 35, "TEST-BAY-1", "user@example.com", "LEAK"),
-        ("hist-c3", TestStatus.Passed, 276, 30, "TEST-BAY-2", "admin@example.com", null),
-        ("hist-c4", TestStatus.Passed, 212, 45, "TEST-BAY-1", "user@example.com", null),
-        ("hist-c5", TestStatus.Failed, 130, 70, "TEST-BAY-2", "test@example.com", "TIMEOUT"),
-        ("hist-c5", TestStatus.Passed, 126, 50, "TEST-BAY-2", "test@example.com", null),
-        ("hist-f1", TestStatus.Failed, 333, 15, "TEST-BAY-1", "admin@example.com", "OVERPRESSURE"),
-        ("hist-f2", TestStatus.Failed, 160, 90, "TEST-BAY-2", "user@example.com", "LEAK"),
-        ("hist-f2", TestStatus.Failed, 156, 60, "TEST-BAY-1", "test@example.com", "LEAK"),
-        ("hist-c2", TestStatus.Failed, 380, 25, "TEST-BAY-1", "test@example.com", "OVERPRESSURE"),
-        ("hist-c1", TestStatus.Failed, 477, 30, "TEST-BAY-2", "admin@example.com", "OTHER")
+        ("complete-01", TestStatus.Passed, 72, 25, "TEST-BAY-1", "test@example.com", null, "All assertions passed - 150/150 tests successful", "https://example.com/test-results/build-passed.json"),
+        ("complete-01", TestStatus.Passed, 48, 40, "TEST-BAY-2", "admin@example.com", null, "Regression tests passed - no performance degradation", "https://example.com/test-results/perf-test.json"),
+        ("failed-01", TestStatus.Failed, 24, 18, "TEST-BAY-1", "user@example.com", "SENSOR_FAULT", "Assertion failed at line 42: expected voltage 12.0V ± 0.1V, got 11.8V", "https://example.com/test-logs/failure.log"),
+        ("failed-01", TestStatus.Running, null, 30, "TEST-BAY-2", "admin@example.com", null, null, null),
+        ("hist-c1", TestStatus.Passed, 476, 20, "TEST-BAY-1", "test@example.com", null, null, null),
+        ("hist-c2", TestStatus.Passed, 378, 55, "TEST-BAY-2", "admin@example.com", null, null, null),
+        ("hist-c3", TestStatus.Failed, 280, 35, "TEST-BAY-1", "user@example.com", "LEAK", null, null),
+        ("hist-c3", TestStatus.Passed, 276, 30, "TEST-BAY-2", "admin@example.com", null, null, null),
+        ("hist-c4", TestStatus.Passed, 212, 45, "TEST-BAY-1", "user@example.com", null, null, null),
+        ("hist-c5", TestStatus.Failed, 130, 70, "TEST-BAY-2", "test@example.com", "TIMEOUT", null, null),
+        ("hist-c5", TestStatus.Passed, 126, 50, "TEST-BAY-2", "test@example.com", null, null, null),
+        ("hist-f1", TestStatus.Failed, 333, 15, "TEST-BAY-1", "admin@example.com", "OVERPRESSURE", null, null),
+        ("hist-f2", TestStatus.Failed, 160, 90, "TEST-BAY-2", "user@example.com", "LEAK", null, null),
+        ("hist-f2", TestStatus.Failed, 156, 60, "TEST-BAY-1", "test@example.com", "LEAK", null, null),
+        ("hist-c2", TestStatus.Failed, 380, 25, "TEST-BAY-1", "test@example.com", "OVERPRESSURE", null, null),
+        ("hist-c1", TestStatus.Failed, 477, 30, "TEST-BAY-2", "admin@example.com", "OTHER", null, null)
     };
 
-    private static readonly Dictionary<int, (string? Result, string? FileUrl)> LegacyTestRunResults = new()
-    {
-        [1] = ("All assertions passed - 150/150 tests successful", "https://example.com/test-results/build-passed.json"),
-        [2] = ("Regression tests passed - no performance degradation", "https://example.com/test-results/perf-test.json"),
-        [3] = ("Assertion failed at line 42: expected voltage 12.0V ± 0.1V, got 11.8V", "https://example.com/test-logs/failure.log")
-    };
-
-    /// <summary>
-    /// Seed all development fixtures: users, builds, parts, test runs and workflow history.
-    /// </summary>
     public static async Task SeedAllAsync(FactoryDbContext dbContext, bool isDevelopment)
     {
         RequireDevelopment(isDevelopment);
@@ -265,19 +254,18 @@ public class FixtureSeeder
         {
             var number = index + 1;
             var (start, end) = TestRunWindow(spec.CompletedHoursAgo, spec.DurationMinutes);
-            LegacyTestRunResults.TryGetValue(number, out var legacy);
             return new TestRun
             {
                 Id = TestRunId(number),
                 BuildId = TestBuildIds[spec.Build],
                 Status = spec.Status,
-                Result = legacy.Result ?? (spec.Status switch
+                Result = spec.Result ?? (spec.Status switch
                 {
                     TestStatus.Passed => "Passed",
                     TestStatus.Failed => $"Failed: {spec.FailureCode}",
                     _ => null
                 }),
-                FileUrl = legacy.FileUrl,
+                FileUrl = spec.FileUrl,
                 FailureCode = spec.FailureCode,
                 CompletedAt = end,
                 CreatedAt = start,
@@ -297,10 +285,7 @@ public class FixtureSeeder
         Console.WriteLine($"  • Test runs: {testRuns.Length} (PASSED, FAILED, RUNNING statuses)");
     }
 
-    /// <summary>
-    /// Seed workflow history for the lifecycle builds and their test runs.
-    /// </summary>
-    public static async Task SeedHistoryAsync(FactoryDbContext dbContext)
+    private static async Task SeedHistoryAsync(FactoryDbContext dbContext)
     {
         var buildIds = LifecycleBuilds.Select(b => TestBuildIds[b.Key]).ToList();
         var builds = await dbContext.Builds
