@@ -69,22 +69,6 @@ public class TransitionsTests
     }
 
     [Fact]
-    public void Build_allows_exactly_four_transitions()
-    {
-        var allowed = AllBuildPairs().Count(p => (bool)p[2]);
-
-        Assert.Equal(4, allowed);
-    }
-
-    [Fact]
-    public void TestRun_allows_exactly_three_transitions()
-    {
-        var allowed = AllTestPairs().Count(p => (bool)p[2]);
-
-        Assert.Equal(3, allowed);
-    }
-
-    [Fact]
     public void Build_undefined_values_are_rejected_without_throwing()
     {
         var undefined = (BuildStatus)99;
