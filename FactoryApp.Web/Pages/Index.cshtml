@@ -1,0 +1,25 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Builds";
+}
+
+<h1>Builds</h1>
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var build in Model.Builds)
+        {
+            <tr>
+                <td>@build.Name</td>
+                <td>@build.Status</td>
+            </tr>
+        }
+    </tbody>
+</table>
