@@ -1,19 +1,23 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using FactoryApp.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace FactoryApp.Domain.TestFixtures;
 
 /// <summary>
-/// Programmatic seeding of test fixtures for HTTP Client testing.
-/// Provides deterministic test data (users, builds, parts, test runs).
+/// Programmatic seeding of development fixtures: users, builds, parts, test runs and workflow history.
+/// Every seed step is idempotent: rows with fixed Ids are added only when missing.
 ///
 /// Usage:
-///   if (isDevelopment)
-///     await FixtureSeeder.SeedAllAsync(dbContext);
+///   if (app.Environment.IsDevelopment())
+///     await FixtureSeeder.SeedAllAsync(dbContext, isDevelopment: true);
 /// </summary>
 public class FixtureSeeder
 {
-    // Fixed GUIDs for consistent test data across runs
+    private static readonly DateTime Anchor = DateTime.UtcNow;
+
     private static readonly Dictionary<string, Guid> TestUserIds = new()
     {
         { "test@example.com", new Guid("00000000-0000-0000-0000-000000000001") },
@@ -33,32 +37,90 @@ public class FixtureSeeder
         { "transaction-test", new Guid("10000000-0000-0000-0000-000000000008") },
         { "edge-case-01", new Guid("10000000-0000-0000-0000-000000000009") },
         { "edge-case-02", new Guid("10000000-0000-0000-0000-000000000010") },
-        { "decimal-precision-test", new Guid("10000000-0000-0000-0000-000000000011") }
+        { "decimal-precision-test", new Guid("10000000-0000-0000-0000-000000000011") },
+        { "hist-c1", new Guid("10000000-0000-0000-0000-000000000012") },
+        { "hist-c2", new Guid("10000000-0000-0000-0000-000000000013") },
+        { "hist-c3", new Guid("10000000-0000-0000-0000-000000000014") },
+        { "hist-c4", new Guid("10000000-0000-0000-0000-000000000015") },
+        { "hist-c5", new Guid("10000000-0000-0000-0000-000000000016") },
+        { "hist-f1", new Guid("10000000-0000-0000-0000-000000000017") },
+        { "hist-f2", new Guid("10000000-0000-0000-0000-000000000018") }
+    };
+
+    private static readonly (string Key, string Name, string Description)[] PendingBuildSpecs =
+    {
+        ("pending-01", "Q2 2026 Production Run", "High-volume manufacturing build for Q2 2026"),
+        ("dataloader-test", "DataLoader Test Build", "Build with 10+ parts for N+1 query testing"),
+        ("pagination-test", "Pagination Test Build", "Build for pagination boundary testing"),
+        ("transaction-test", "Transaction Test Build", "Build for EF Core + Dapper transaction atomicity testing"),
+        ("edge-case-01", "Edge Case Build 1", new string('x', 1000)),
+        ("edge-case-02", "Edge Case Build 2", string.Empty),
+        ("decimal-precision-test", "Decimal Precision Test Build", "Build with fractional quantity parts for precision testing (issue #132)")
+    };
+
+    // StartHoursAgo: Pending->Running. DurationMinutes: Running->terminal, null while still open.
+    private static readonly (string Key, string Name, string? Description, BuildStatus Status, int StartHoursAgo, int? DurationMinutes, string Operator, string? Error)[] LifecycleBuilds =
+    {
+        ("running-01", "Legacy System Migration", "Update legacy system components", BuildStatus.Running, 24, null, "test@example.com", null),
+        ("running-02", "Testing Phase Build", "Comprehensive test coverage phase", BuildStatus.Running, 2, null, "user@example.com", null),
+        ("complete-01", "Completed Build A", "Successfully finished build", BuildStatus.Complete, 78, 360, "admin@example.com", null),
+        ("failed-01", "Failed Build B", "Build failed during testing phase", BuildStatus.Failed, 32, 480, "user@example.com", "Voltage out of tolerance: 11.8V"),
+        ("hist-c1", "History Build 1", null, BuildStatus.Complete, 480, 90, "test@example.com", null),
+        ("hist-c2", "History Build 2", null, BuildStatus.Complete, 384, 180, "admin@example.com", null),
+        ("hist-c3", "History Build 3", null, BuildStatus.Complete, 288, 270, "user@example.com", null),
+        ("hist-c4", "History Build 4", null, BuildStatus.Complete, 216, 120, "test@example.com", null),
+        ("hist-c5", "History Build 5", null, BuildStatus.Complete, 144, 720, "admin@example.com", null),
+        ("hist-f1", "History Build 6", null, BuildStatus.Failed, 336, 45, "user@example.com", "Fixture jam"),
+        ("hist-f2", "History Build 7", null, BuildStatus.Failed, 168, 360, "test@example.com", "Sealant cure failed")
+    };
+
+    // Test run N is the N-th entry (1-based); its Id is TestRunId(N). CompletedHoursAgo is null while running.
+    private static readonly (string Build, TestStatus Status, int? CompletedHoursAgo, int DurationMinutes, string Station, string Operator, string? FailureCode)[] TestRunSpecs =
+    {
+        ("complete-01", TestStatus.Passed, 72, 25, "TEST-BAY-1", "test@example.com", null),
+        ("complete-01", TestStatus.Passed, 48, 40, "TEST-BAY-2", "admin@example.com", null),
+        ("failed-01", TestStatus.Failed, 24, 18, "TEST-BAY-1", "user@example.com", "SENSOR_FAULT"),
+        ("failed-01", TestStatus.Running, null, 30, "TEST-BAY-2", "admin@example.com", null),
+        ("hist-c1", TestStatus.Passed, 476, 20, "TEST-BAY-1", "test@example.com", null),
+        ("hist-c2", TestStatus.Passed, 378, 55, "TEST-BAY-2", "admin@example.com", null),
+        ("hist-c3", TestStatus.Failed, 280, 35, "TEST-BAY-1", "user@example.com", "LEAK"),
+        ("hist-c3", TestStatus.Passed, 276, 30, "TEST-BAY-2", "admin@example.com", null),
+        ("hist-c4", TestStatus.Passed, 212, 45, "TEST-BAY-1", "user@example.com", null),
+        ("hist-c5", TestStatus.Failed, 130, 70, "TEST-BAY-2", "test@example.com", "TIMEOUT"),
+        ("hist-c5", TestStatus.Passed, 126, 50, "TEST-BAY-2", "test@example.com", null),
+        ("hist-f1", TestStatus.Failed, 333, 15, "TEST-BAY-1", "admin@example.com", "OVERPRESSURE"),
+        ("hist-f2", TestStatus.Failed, 160, 90, "TEST-BAY-2", "user@example.com", "LEAK"),
+        ("hist-f2", TestStatus.Failed, 156, 60, "TEST-BAY-1", "test@example.com", "LEAK"),
+        ("hist-c2", TestStatus.Failed, 380, 25, "TEST-BAY-1", "test@example.com", "OVERPRESSURE"),
+        ("hist-c1", TestStatus.Failed, 477, 30, "TEST-BAY-2", "admin@example.com", "OTHER")
+    };
+
+    private static readonly Dictionary<int, (string? Result, string? FileUrl)> LegacyTestRunResults = new()
+    {
+        [1] = ("All assertions passed - 150/150 tests successful", "https://example.com/test-results/build-passed.json"),
+        [2] = ("Regression tests passed - no performance degradation", "https://example.com/test-results/perf-test.json"),
+        [3] = ("Assertion failed at line 42: expected voltage 12.0V ± 0.1V, got 11.8V", "https://example.com/test-logs/failure.log")
     };
 
     /// <summary>
-    /// Seed all test data: users, builds, parts, test runs.
-    /// Idempotent - safe to call multiple times.
+    /// Seed all development fixtures: users, builds, parts, test runs and workflow history.
     /// </summary>
-    public static async Task SeedAllAsync(FactoryDbContext dbContext)
+    public static async Task SeedAllAsync(FactoryDbContext dbContext, bool isDevelopment)
     {
-        // Generate bcrypt hash for test password: SecurePassword123!
-        // Hash is regenerated each call (safe for idempotent seeding due to WHERE check in SeedTestUsersAsync)
+        RequireDevelopment(isDevelopment);
+
         string hashedPassword = BCrypt.Net.BCrypt.HashPassword("SecurePassword123!");
 
         await SeedTestUsersAsync(dbContext, hashedPassword);
         await SeedTestBuildsAsync(dbContext);
         await SeedTestPartsAsync(dbContext);
         await SeedTestRunsAsync(dbContext);
+        await SeedHistoryAsync(dbContext);
 
         Console.WriteLine("✓ Test fixtures seeded successfully");
     }
 
-    /// <summary>
-    /// Seed test users for authentication testing.
-    /// Creates 3 users: test, admin, user (all with same password for simplicity).
-    /// </summary>
-    public static async Task SeedTestUsersAsync(FactoryDbContext dbContext, string hashedPassword)
+    private static async Task SeedTestUsersAsync(FactoryDbContext dbContext, string hashedPassword)
     {
         var users = new[]
         {
@@ -91,130 +153,45 @@ public class FixtureSeeder
             }
             else
             {
-                // Ensure password hash is current (idempotent)
                 existing.PasswordHash = hashedPassword;
                 dbContext.AuthUsers.Update(existing);
             }
         }
 
         await dbContext.SaveChangesAsync();
-        Console.WriteLine("  • Test users: 3");
+        Console.WriteLine($"  • Test users: {users.Length}");
     }
 
     /// <summary>
-    /// Seed 10 test builds covering all statuses and edge cases.
-    /// Status distribution: PENDING (5), RUNNING (2), COMPLETE (1), FAILED (1), edge cases (1).
+    /// Seed pending, running, complete and failed builds, including the history builds.
     /// </summary>
     public static async Task SeedTestBuildsAsync(FactoryDbContext dbContext)
     {
-        var builds = new Build[]
+        var pending = PendingBuildSpecs.Select(p => new Build
         {
-            // Happy path builds
-            new()
-            {
-                Id = TestBuildIds["pending-01"],
-                Name = "Q2 2026 Production Run",
-                Description = "High-volume manufacturing build for Q2 2026",
-                Status = BuildStatus.Pending,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = TestBuildIds["running-01"],
-                Name = "Legacy System Migration",
-                Description = "Update legacy system components",
-                Status = BuildStatus.Running,
-                CreatedAt = DateTime.UtcNow.AddDays(-2),
-                UpdatedAt = DateTime.UtcNow.AddDays(-1)
-            },
-            new()
-            {
-                Id = TestBuildIds["running-02"],
-                Name = "Testing Phase Build",
-                Description = "Comprehensive test coverage phase",
-                Status = BuildStatus.Running,
-                CreatedAt = DateTime.UtcNow.AddDays(-1),
-                UpdatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = TestBuildIds["complete-01"],
-                Name = "Completed Build A",
-                Description = "Successfully finished build",
-                Status = BuildStatus.Complete,
-                CreatedAt = DateTime.UtcNow.AddDays(-5),
-                UpdatedAt = DateTime.UtcNow.AddDays(-3)
-            },
-            new()
-            {
-                Id = TestBuildIds["failed-01"],
-                Name = "Failed Build B",
-                Description = "Build failed during testing phase",
-                Status = BuildStatus.Failed,
-                CreatedAt = DateTime.UtcNow.AddDays(-3),
-                UpdatedAt = DateTime.UtcNow.AddDays(-1)
-            },
+            Id = TestBuildIds[p.Key],
+            Name = p.Name,
+            Description = p.Description,
+            Status = BuildStatus.Pending,
+            CreatedAt = Anchor,
+            UpdatedAt = Anchor
+        });
 
-            // Specialized builds for specific tests
-            new()
+        var lifecycle = LifecycleBuilds.Select(b =>
+        {
+            var (start, end) = BuildWindow(b.StartHoursAgo, b.DurationMinutes);
+            return new Build
             {
-                Id = TestBuildIds["dataloader-test"],
-                Name = "DataLoader Test Build",
-                Description = "Build with 10+ parts for N+1 query testing",
-                Status = BuildStatus.Pending,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = TestBuildIds["pagination-test"],
-                Name = "Pagination Test Build",
-                Description = "Build for pagination boundary testing",
-                Status = BuildStatus.Pending,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = TestBuildIds["transaction-test"],
-                Name = "Transaction Test Build",
-                Description = "Build for EF Core + Dapper transaction atomicity testing",
-                Status = BuildStatus.Pending,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            },
+                Id = TestBuildIds[b.Key],
+                Name = b.Name,
+                Description = b.Description,
+                Status = b.Status,
+                CreatedAt = start.AddHours(-2),
+                UpdatedAt = end ?? start
+            };
+        });
 
-            // Edge case builds
-            new()
-            {
-                Id = TestBuildIds["edge-case-01"],
-                Name = "Edge Case Build 1",
-                Description = new string('x', 1000), // Max length description
-                Status = BuildStatus.Pending,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = TestBuildIds["edge-case-02"],
-                Name = "Edge Case Build 2",
-                Description = string.Empty, // Empty description (optional field)
-                Status = BuildStatus.Pending,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = TestBuildIds["decimal-precision-test"],
-                Name = "Decimal Precision Test Build",
-                Description = "Build with fractional quantity parts for precision testing (issue #132)",
-                Status = BuildStatus.Pending,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            }
-        };
-
+        var builds = pending.Concat(lifecycle).ToArray();
         foreach (var build in builds)
         {
             if (!await dbContext.Builds.AnyAsync(b => b.Id == build.Id))
@@ -224,7 +201,7 @@ public class FixtureSeeder
         }
 
         await dbContext.SaveChangesAsync();
-        Console.WriteLine("  • Test builds: 11 (PENDING, RUNNING, COMPLETE, FAILED, edge cases, decimal precision)");
+        Console.WriteLine($"  • Test builds: {builds.Length} (PENDING, RUNNING, COMPLETE, FAILED, edge cases, history builds)");
     }
 
     /// <summary>
@@ -280,61 +257,33 @@ public class FixtureSeeder
     }
 
     /// <summary>
-    /// Seed test runs for status and transaction testing.
-    /// Creates test runs with PASSED, FAILED, and RUNNING statuses.
+    /// Seed test runs covering PASSED, FAILED and RUNNING statuses across the history builds.
     /// </summary>
     public static async Task SeedTestRunsAsync(FactoryDbContext dbContext)
     {
-        var completeBuildId = TestBuildIds["complete-01"];
-        var failedBuildId = TestBuildIds["failed-01"];
-
-        var testRuns = new TestRun[]
+        var testRuns = TestRunSpecs.Select((spec, index) =>
         {
-            new()
+            var number = index + 1;
+            var (start, end) = TestRunWindow(spec.CompletedHoursAgo, spec.DurationMinutes);
+            LegacyTestRunResults.TryGetValue(number, out var legacy);
+            return new TestRun
             {
-                Id = Guid.NewGuid(),
-                BuildId = completeBuildId,
-                Status = TestStatus.Passed,
-                Result = "All assertions passed - 150/150 tests successful",
-                FileUrl = "https://example.com/test-results/build-passed.json",
-                CompletedAt = DateTime.UtcNow.AddDays(-3),
-                CreatedAt = DateTime.UtcNow.AddDays(-3),
-                UpdatedAt = DateTime.UtcNow.AddDays(-3)
-            },
-            new()
-            {
-                Id = Guid.NewGuid(),
-                BuildId = completeBuildId,
-                Status = TestStatus.Passed,
-                Result = "Regression tests passed - no performance degradation",
-                FileUrl = "https://example.com/test-results/perf-test.json",
-                CompletedAt = DateTime.UtcNow.AddDays(-2),
-                CreatedAt = DateTime.UtcNow.AddDays(-2),
-                UpdatedAt = DateTime.UtcNow.AddDays(-2)
-            },
-            new()
-            {
-                Id = Guid.NewGuid(),
-                BuildId = failedBuildId,
-                Status = TestStatus.Failed,
-                Result = "Assertion failed at line 42: expected voltage 12.0V ± 0.1V, got 11.8V",
-                FileUrl = "https://example.com/test-logs/failure.log",
-                CompletedAt = DateTime.UtcNow.AddDays(-1),
-                CreatedAt = DateTime.UtcNow.AddDays(-1),
-                UpdatedAt = DateTime.UtcNow.AddDays(-1)
-            },
-            new()
-            {
-                Id = Guid.NewGuid(),
-                BuildId = failedBuildId,
-                Status = TestStatus.Running,
-                Result = null,
-                FileUrl = null,
-                CompletedAt = null,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            }
-        };
+                Id = TestRunId(number),
+                BuildId = TestBuildIds[spec.Build],
+                Status = spec.Status,
+                Result = legacy.Result ?? (spec.Status switch
+                {
+                    TestStatus.Passed => "Passed",
+                    TestStatus.Failed => $"Failed: {spec.FailureCode}",
+                    _ => null
+                }),
+                FileUrl = legacy.FileUrl,
+                FailureCode = spec.FailureCode,
+                CompletedAt = end,
+                CreatedAt = start,
+                UpdatedAt = end ?? start
+            };
+        }).ToArray();
 
         foreach (var testRun in testRuns)
         {
@@ -345,24 +294,145 @@ public class FixtureSeeder
         }
 
         await dbContext.SaveChangesAsync();
-        Console.WriteLine("  • Test runs: 4 (PASSED, FAILED, RUNNING statuses)");
+        Console.WriteLine($"  • Test runs: {testRuns.Length} (PASSED, FAILED, RUNNING statuses)");
     }
 
     /// <summary>
-    /// Clean up all test fixtures (for development reset).
-    /// Removes all test data by ID range.
+    /// Seed workflow history for the lifecycle builds and their test runs.
     /// </summary>
-    public static async Task CleanupAllAsync(FactoryDbContext dbContext)
+    public static async Task SeedHistoryAsync(FactoryDbContext dbContext)
     {
+        var buildIds = LifecycleBuilds.Select(b => TestBuildIds[b.Key]).ToList();
+        var builds = await dbContext.Builds
+            .Where(b => buildIds.Contains(b.Id))
+            .ToDictionaryAsync(b => b.Id);
+        var existingIds = new HashSet<Guid>(await dbContext.WorkflowHistory
+            .Where(h => h.BuildId.HasValue && buildIds.Contains(h.BuildId.Value))
+            .Select(h => h.Id)
+            .ToListAsync());
+
+        var rows = new List<WorkflowHistoryRecord>();
+
+        foreach (var b in LifecycleBuilds)
+        {
+            var build = builds[TestBuildIds[b.Key]];
+            build.WorkflowInstanceId ??= HistoryId($"wf:{b.Key}");
+            var (start, end) = BuildWindow(b.StartHoursAgo, b.DurationMinutes);
+            rows.AddRange(ExpandHistory(
+                $"hist:build:{b.Key}", "Build", build.Id, build.WorkflowInstanceId.Value,
+                "ASSEMBLY-1", b.Operator, start, end, b.Status.ToString(), b.Error));
+        }
+
+        foreach (var (spec, number) in TestRunSpecs.Select((s, i) => (s, i + 1)))
+        {
+            var build = builds[TestBuildIds[spec.Build]];
+            var (start, end) = TestRunWindow(spec.CompletedHoursAgo, spec.DurationMinutes);
+            var snapshot = JsonSerializer.Serialize(new { testRunId = TestRunId(number) });
+            rows.AddRange(ExpandHistory(
+                $"hist:testrun:{number:D2}", "TestRun", build.Id, build.WorkflowInstanceId!.Value,
+                spec.Station, spec.Operator, start, end, spec.Status.ToString(), snapshot: snapshot));
+        }
+
+        var missing = rows.Where(r => !existingIds.Contains(r.Id)).ToList();
+        dbContext.WorkflowHistory.AddRange(missing);
+
+        await dbContext.SaveChangesAsync();
+        Console.WriteLine($"  • Workflow history: {rows.Count} rows ({missing.Count} new)");
+    }
+
+    /// <summary>
+    /// Clean up all test fixtures, including workflow history, for development reset.
+    /// </summary>
+    public static async Task CleanupAllAsync(FactoryDbContext dbContext, bool isDevelopment)
+    {
+        RequireDevelopment(isDevelopment);
+
         var testBuildIds = TestBuildIds.Values.ToList();
         var testUserEmails = TestUserIds.Keys.ToList();
 
-        // Delete in order: TestRuns → Parts → Builds → AuthUsers
+        // WorkflowHistory has no cascade from Builds, so it is deleted before them.
+        await dbContext.WorkflowHistory
+            .Where(h => h.BuildId.HasValue && testBuildIds.Contains(h.BuildId.Value))
+            .ExecuteDeleteAsync();
         await dbContext.TestRuns.Where(t => testBuildIds.Contains(t.BuildId)).ExecuteDeleteAsync();
         await dbContext.Parts.Where(p => testBuildIds.Contains(p.BuildId)).ExecuteDeleteAsync();
         await dbContext.Builds.Where(b => testBuildIds.Contains(b.Id)).ExecuteDeleteAsync();
         await dbContext.AuthUsers.Where(u => testUserEmails.Contains(u.Email)).ExecuteDeleteAsync();
 
         Console.WriteLine("✓ Test fixtures cleaned up");
+    }
+
+    // Seeded users share a known password; never run outside development.
+    private static void RequireDevelopment(bool isDevelopment)
+    {
+        if (!isDevelopment)
+        {
+            throw new InvalidOperationException("Fixture seeding is development-only.");
+        }
+    }
+
+    private static (DateTime Start, DateTime? End) BuildWindow(int startHoursAgo, int? durationMinutes)
+    {
+        var start = Anchor.AddHours(-startHoursAgo);
+        DateTime? end = durationMinutes.HasValue ? start.AddMinutes(durationMinutes.Value) : null;
+        return (start, end);
+    }
+
+    private static (DateTime Start, DateTime? End) TestRunWindow(int? completedHoursAgo, int durationMinutes)
+    {
+        DateTime? end = completedHoursAgo.HasValue ? Anchor.AddHours(-completedHoursAgo.Value) : null;
+        return ((end ?? Anchor).AddMinutes(-durationMinutes), end);
+    }
+
+    // Stable across runs so re-seeding finds the history rows it already wrote.
+    private static Guid HistoryId(string key) => new(MD5.HashData(Encoding.UTF8.GetBytes(key)));
+
+    private static Guid TestRunId(int number) => new($"30000000-0000-0000-0000-0000000000{number:D2}");
+
+    private static IEnumerable<WorkflowHistoryRecord> ExpandHistory(
+        string keyPrefix, string activity, Guid buildId, Guid workflowInstanceId,
+        string station, string operatorEmail, DateTime start, DateTime? end, string terminalStatus,
+        string? error = null, string? snapshot = null)
+    {
+        yield return new WorkflowHistoryRecord
+        {
+            Id = HistoryId($"{keyPrefix}:started"),
+            WorkflowInstanceId = workflowInstanceId,
+            BuildId = buildId,
+            ActivityName = activity,
+            EventType = "Started",
+            OldStatus = "Pending",
+            NewStatus = "Running",
+            StateSnapshot = snapshot,
+            RecordedAt = start,
+            ExecutionStarted = start,
+            ExecutionCompleted = start,
+            Station = station,
+            Operator = operatorEmail
+        };
+
+        if (end is not DateTime completedAt)
+        {
+            yield break;
+        }
+
+        yield return new WorkflowHistoryRecord
+        {
+            Id = HistoryId($"{keyPrefix}:end"),
+            WorkflowInstanceId = workflowInstanceId,
+            BuildId = buildId,
+            ActivityName = activity,
+            EventType = terminalStatus == "Failed" ? "Failed" : "Completed",
+            OldStatus = "Running",
+            NewStatus = terminalStatus,
+            StateSnapshot = snapshot,
+            ErrorMessage = error,
+            RecordedAt = completedAt,
+            ExecutionStarted = start,
+            ExecutionCompleted = completedAt,
+            ElapsedMilliseconds = (long)(completedAt - start).TotalMilliseconds,
+            Station = station,
+            Operator = operatorEmail
+        };
     }
 }
