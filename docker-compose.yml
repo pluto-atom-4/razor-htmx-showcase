@@ -1,0 +1,15 @@
+services:
+  sql-server:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: razor-htmx-sql-server
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?copy .env.example to .env}
+    ports:
+      - "${MSSQL_PORT:-1433}:1433"
+    volumes:
+      - sql-server-data:/var/opt/mssql
+
+volumes:
+  sql-server-data:
