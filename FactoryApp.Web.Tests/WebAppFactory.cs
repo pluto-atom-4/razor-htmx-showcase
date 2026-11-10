@@ -19,7 +19,13 @@ public class WebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     async Task IAsyncLifetime.DisposeAsync()
     {
-        await base.DisposeAsync();
-        await _container.DisposeAsync();
+        try
+        {
+            await base.DisposeAsync();
+        }
+        finally
+        {
+            await _container.DisposeAsync();
+        }
     }
 }

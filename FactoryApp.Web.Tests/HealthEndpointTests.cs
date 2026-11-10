@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 
 namespace FactoryApp.Web.Tests;
 
@@ -19,6 +20,7 @@ public class HealthEndpointTests : IClassFixture<WebAppFactory>
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("ok", body);
+        using var json = JsonDocument.Parse(body);
+        Assert.Equal("ok", json.RootElement.GetProperty("status").GetString());
     }
 }
