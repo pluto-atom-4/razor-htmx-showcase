@@ -124,6 +124,55 @@ public class AuthServiceTests(SqlFixture sql) : IClassFixture<SqlFixture>, IAsyn
         Assert.Null(principal.FindFirst("station"));
     }
 
+    [Fact]
+    public async Task Custom_claims_cannot_add_reserved_role_or_identity_claims()
+    {
+        var email = await InsertUserAsync(
+            "{\"http://schemas.microsoft.com/ws/2008/06/identity/claims/role\":\"Admin\","
+            + "\"http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier\":\"someone-else\"}");
+        await using var ctx = CreateContext();
+
+        var principal = await new AuthService(ctx).ValidateCredentialsAsync(email, SeededPassword);
+
+        Assert.NotNull(principal);
+        Assert.False(principal.IsInRole("Admin"));
+        Assert.Single(principal.FindAll(System.Security.Claims.ClaimTypes.Role));
+        Assert.Single(principal.FindAll(System.Security.Claims.ClaimTypes.NameIdentifier));
+    }
+
+    [Fact]
+    public async Task Null_custom_claim_value_is_skipped_and_login_still_works()
+    {
+        var email = await InsertUserAsync("{\"station\":null,\"shift\":\"night\"}");
+        await using var ctx = CreateContext();
+
+        var principal = await new AuthService(ctx).ValidateCredentialsAsync(email, SeededPassword);
+
+        Assert.NotNull(principal);
+        Assert.Null(principal.FindFirst("station"));
+        Assert.Equal("night", principal.FindFirst("shift")?.Value);
+    }
+
+    [Fact]
+    public async Task Password_longer_than_72_bytes_is_rejected_even_if_prefix_matches()
+    {
+        var exactly72 = new string('p', 72);
+        var email = $"long-{Guid.NewGuid():N}@example.com";
+        await using var ctx = CreateContext();
+        var service = new AuthService(ctx);
+        ctx.AuthUsers.Add(new AuthUser
+        {
+            Id = Guid.NewGuid(),
+            Email = email,
+            PasswordHash = service.HashPassword(exactly72),
+            Claims = "{}",
+        });
+        await ctx.SaveChangesAsync();
+
+        Assert.NotNull(await service.ValidateCredentialsAsync(email, exactly72));
+        Assert.Null(await service.ValidateCredentialsAsync(email, exactly72 + "x"));
+    }
+
     private FactoryDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<FactoryDbContext>().UseSqlServer(sql.ConnectionString).Options);
 

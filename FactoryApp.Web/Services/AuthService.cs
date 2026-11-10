@@ -12,6 +12,8 @@ public sealed class AuthService(FactoryDbContext db)
     // Unknown emails verify against this so both failure paths pay the same BCrypt cost.
     private static readonly string DummyHash = BCrypt.Net.BCrypt.HashPassword("unused-dummy-password");
 
+    private const int MaxPasswordBytes = 72;
+
     public string HashPassword(string password)
         => BCrypt.Net.BCrypt.HashPassword(password);
 
@@ -29,7 +31,9 @@ public sealed class AuthService(FactoryDbContext db)
 
     public async Task<ClaimsPrincipal?> ValidateCredentialsAsync(string email, string password, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrEmpty(password))
+        // BCrypt ignores bytes past 72, so a longer password would match on its first 72 bytes only.
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrEmpty(password)
+            || System.Text.Encoding.UTF8.GetByteCount(password) > MaxPasswordBytes)
         {
             return null;
         }
@@ -53,15 +57,21 @@ public sealed class AuthService(FactoryDbContext db)
             new(ClaimTypes.Role, user.Role.ToString()),
         };
 
+        // Malformed claims JSON is skipped so one bad row cannot block login.
         try
         {
-            var customClaims = JsonSerializer.Deserialize<Dictionary<string, string>>(user.Claims) ?? new();
+            var customClaims = JsonSerializer.Deserialize<Dictionary<string, string?>>(user.Claims) ?? new();
             foreach (var (claimName, claimValue) in customClaims)
             {
+                // A custom claim must never add a second Role or identity claim.
+                if (claimValue is null || claims.Any(c => c.Type == claimName))
+                {
+                    continue;
+                }
+
                 claims.Add(new Claim(claimName, claimValue));
             }
         }
-        // Malformed claims JSON is skipped so one bad row cannot block login.
         catch (JsonException)
         {
         }
