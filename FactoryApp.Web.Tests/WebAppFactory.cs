@@ -17,12 +17,20 @@ public class WebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         await _container.StartAsync();
 
-        var options = new DbContextOptionsBuilder<FactoryDbContext>()
-            .UseSqlServer(_container.GetConnectionString())
-            .Options;
-        await using var ctx = new FactoryDbContext(options);
-        await ctx.Database.MigrateAsync();
-        await FixtureSeeder.SeedAllAsync(ctx, isDevelopment: true);
+        try
+        {
+            var options = new DbContextOptionsBuilder<FactoryDbContext>()
+                .UseSqlServer(_container.GetConnectionString())
+                .Options;
+            await using var ctx = new FactoryDbContext(options);
+            await ctx.Database.MigrateAsync();
+            await FixtureSeeder.SeedAllAsync(ctx, isDevelopment: true);
+        }
+        catch
+        {
+            await _container.DisposeAsync();
+            throw;
+        }
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
