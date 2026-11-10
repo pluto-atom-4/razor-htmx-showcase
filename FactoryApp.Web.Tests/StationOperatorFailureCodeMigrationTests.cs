@@ -2,6 +2,7 @@ using FactoryApp.Domain;
 using FactoryApp.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Testcontainers.MsSql;
 
@@ -37,11 +38,11 @@ public class StationOperatorFailureCodeMigrationTests : IAsyncLifetime
 
             await ctx.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO dbo.Builds (Id, Name, Status, CreatedAt, UpdatedAt)
-                VALUES ({buildId}, 'Legacy build', 0, {recordedAt}, {recordedAt});
+                VALUES ({buildId}, 'Legacy build', {(int)BuildStatus.Pending}, {recordedAt}, {recordedAt});
                 """);
             await ctx.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO dbo.TestRuns (Id, BuildId, Status, Result, FileUrl, CreatedAt, UpdatedAt)
-                VALUES ({testRunId}, {buildId}, 2, 'ok', 'https://example.test/run.log', {recordedAt}, {recordedAt});
+                VALUES ({testRunId}, {buildId}, {(int)TestStatus.Passed}, 'ok', 'https://example.test/run.log', {recordedAt}, {recordedAt});
                 """);
             await ctx.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO dbo.WorkflowHistory
@@ -111,15 +112,30 @@ public class StationOperatorFailureCodeMigrationTests : IAsyncLifetime
             Assert.Equal("LEAK", testRun.FailureCode);
         }
 
-        await using (var ctx = CreateContext(connectionString))
+        await using (var connection = new SqlConnection(connectionString))
         {
-            var model = ctx.Model;
-            Assert.Equal(50, model.FindEntityType(typeof(WorkflowHistoryRecord))!
-                .FindProperty(nameof(WorkflowHistoryRecord.Station))!.GetMaxLength());
-            Assert.Equal(256, model.FindEntityType(typeof(WorkflowHistoryRecord))!
-                .FindProperty(nameof(WorkflowHistoryRecord.Operator))!.GetMaxLength());
-            Assert.Equal(30, model.FindEntityType(typeof(TestRun))!
-                .FindProperty(nameof(TestRun.FailureCode))!.GetMaxLength());
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT TABLE_NAME, COLUMN_NAME, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = 'dbo'
+                  AND ((TABLE_NAME = 'WorkflowHistory' AND COLUMN_NAME IN ('Station', 'Operator'))
+                    OR (TABLE_NAME = 'TestRuns' AND COLUMN_NAME = 'FailureCode'));
+                """;
+
+            var columns = new Dictionary<string, (int? MaxLength, string Nullable)>();
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var key = $"{reader.GetString(0)}.{reader.GetString(1)}";
+                var maxLength = reader.IsDBNull(2) ? (int?)null : reader.GetInt32(2);
+                columns[key] = (maxLength, reader.GetString(3));
+            }
+
+            Assert.Equal((50, "YES"), columns["WorkflowHistory.Station"]);
+            Assert.Equal((256, "YES"), columns["WorkflowHistory.Operator"]);
+            Assert.Equal((30, "YES"), columns["TestRuns.FailureCode"]);
         }
     }
 
