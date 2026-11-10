@@ -36,7 +36,9 @@ public sealed class BuildService(FactoryDbContext db, TimeProvider? time = null)
             return Invalid(transitionError);
         }
 
-        var workflowInstanceId = build.WorkflowInstanceId ?? Guid.NewGuid();
+        var workflowInstanceId = build.WorkflowInstanceId is { } existing && existing != Guid.Empty
+            ? existing
+            : Guid.NewGuid();
 
         return await db.Database.CreateExecutionStrategy().ExecuteAsync(
             async token => await ApplyAsync(build, buildId, newStatus, station, operatorName, workflowInstanceId, token),
@@ -52,7 +54,7 @@ public sealed class BuildService(FactoryDbContext db, TimeProvider? time = null)
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
         var updated = await db.Builds
-            .Where(b => b.Id == buildId && b.Status == build.Status)
+            .Where(b => b.Id == buildId && b.Status == build.Status && b.UpdatedAt == build.UpdatedAt)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(b => b.Status, newStatus)
                 .SetProperty(b => b.UpdatedAt, now)
@@ -90,7 +92,7 @@ public sealed class BuildService(FactoryDbContext db, TimeProvider? time = null)
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
-        // Event is for the caller to publish after commit.
+        // Publish only after commit; a rollback must not announce a change.
         var changed = new BuildStatusChangedEvent
         {
             BuildId = buildId,
