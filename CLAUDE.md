@@ -25,5 +25,5 @@ Manufacturing workflow showcase (Build, Part, Test-run): ASP.NET Core minimal AP
 
 - `docker compose up -d` then `./scripts/apply-migrations.sh` (needs `.env` copied from `.env.example`; quote `FACTORY_CONNECTION`, it contains spaces).
 - `dotnet build` and `dotnet test` at the repo root. CI runs both plus the migrations against a SQL Server service.
-- `FactoryApp.Domain/DesignTimeFactoryDbContextFactory.cs` is the one hand-added file in the vendored domain; it exists so `dotnet ef` works without a web host.
+- `FactoryApp.Domain/DesignTimeFactoryDbContextFactory.cs` and `FactoryApp.Domain/Transitions.cs` are hand-added to the vendored domain; the first lets `dotnet ef` work without a web host, the second holds the build and test-run transition tables.
 - Branches `feat/issue-N-short-desc`, one PR per issue, `Closes #N` in the PR body.
