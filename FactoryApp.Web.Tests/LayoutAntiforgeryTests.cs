@@ -6,7 +6,7 @@ namespace FactoryApp.Web.Tests;
 [Trait("Category", "Integration")]
 public class LayoutAntiforgeryTests(WebAppFactory factory) : IClassFixture<WebAppFactory>
 {
-    private static readonly Regex CsrfMeta = new("<meta name=\"csrf-token\" content=\"([^\"]*)\"", RegexOptions.Compiled);
+    private static readonly Regex CsrfMeta = new("<meta[^>]*name=\"csrf-token\"[^>]*content=\"([^\"]+)\"", RegexOptions.Compiled);
     private static readonly Regex LogoutForm = new("<form[^>]*action=\"/Login\\?handler=Logout\"[^>]*>[\\s\\S]*?</form>", RegexOptions.Compiled);
 
     [Fact]
@@ -19,8 +19,7 @@ public class LayoutAntiforgeryTests(WebAppFactory factory) : IClassFixture<WebAp
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var meta = CsrfMeta.Match(body);
-        Assert.True(meta.Success);
-        Assert.False(string.IsNullOrEmpty(meta.Groups[1].Value));
+        Assert.True(meta.Success, "Non-empty csrf-token meta tag not found.");
         Assert.Contains("src=\"/app.js\"", body);
         var form = LogoutForm.Match(body);
         Assert.True(form.Success, "Logout form posting to Login?handler=Logout not found.");
@@ -39,7 +38,7 @@ public class LayoutAntiforgeryTests(WebAppFactory factory) : IClassFixture<WebAp
     }
 
     [Fact]
-    public async Task App_script_is_served_anonymously_with_header_hook()
+    public async Task App_script_text_is_served_anonymously_with_the_expected_header_name()
     {
         using var client = AuthTestClient.CreateClient(factory);
 
@@ -48,7 +47,8 @@ public class LayoutAntiforgeryTests(WebAppFactory factory) : IClassFixture<WebAp
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("htmx:configRequest", body);
-        Assert.Contains("RequestVerificationToken", body);
+        Assert.Contains("headers['RequestVerificationToken']", body);
+        Assert.Contains("location.origin", body);
     }
 
     [Fact]
@@ -99,6 +99,8 @@ public class LayoutAntiforgeryTests(WebAppFactory factory) : IClassFixture<WebAp
         var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var index = await client.GetAsync("/");
+        Assert.Equal(HttpStatusCode.OK, index.StatusCode);
     }
 
     private static async Task<string> MetaCsrfTokenAsync(HttpClient client)
