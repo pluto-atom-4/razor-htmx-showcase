@@ -109,6 +109,7 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
     [InlineData("https://evil.example", "/")]
     [InlineData("//evil.example", "/")]
     [InlineData("/\\evil.example", "/")]
+    [InlineData("/\t/evil.example", "/")]
     public async Task Return_url_is_honored_only_when_local(string returnUrl, string expectedLocation)
     {
         using var client = AuthTestClient.CreateClient(factory);
@@ -130,7 +131,7 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
     }
 
     [Fact]
-    public async Task Logout_post_with_valid_token_redirects_to_login()
+    public async Task Logout_post_with_valid_token_is_accepted_and_redirects_to_login()
     {
         using var client = AuthTestClient.CreateClient(factory);
         var token = await AuthTestClient.FetchAntiforgeryTokenAsync(client);
@@ -140,10 +141,47 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.Equal("/Login", response.Headers.Location?.ToString());
+    }
 
+    [Fact]
+    public async Task Authenticated_get_login_redirects_to_index()
+    {
+        using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
+
+        var response = await client.GetAsync("/Login");
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/", response.Headers.Location?.ToString());
+    }
+
+    [Fact]
+    public async Task Get_logout_path_does_not_end_the_session()
+    {
+        using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
+
+        await client.GetAsync("/Logout");
         var index = await client.GetAsync("/");
-        Assert.Equal(HttpStatusCode.Redirect, index.StatusCode);
-        Assert.StartsWith("/Login", PathAndQuery(index));
+
+        Assert.Equal(HttpStatusCode.OK, index.StatusCode);
+    }
+
+    [Fact]
+    public async Task Invalid_model_redisplay_does_not_echo_the_password()
+    {
+        using var client = AuthTestClient.CreateClient(factory);
+        var token = await AuthTestClient.FetchAntiforgeryTokenAsync(client);
+        var form = new Dictionary<string, string>
+        {
+            ["Email"] = "not-an-email",
+            ["Password"] = AuthTestClient.SeededPassword,
+            ["__RequestVerificationToken"] = token,
+        };
+
+        var response = await client.PostAsync("/Login", new FormUrlEncodedContent(form));
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.DoesNotContain(AuthTestClient.SeededPassword, body);
     }
 
     // The cookie middleware redirects with an absolute URL; page redirects are relative.
@@ -154,5 +192,5 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
 
     private static bool SetsAuthCookie(HttpResponseMessage response) =>
         response.Headers.TryGetValues("Set-Cookie", out var cookies)
-        && cookies.Any(c => c.Contains("factory.auth", StringComparison.Ordinal));
+        && cookies.Any(c => System.Text.RegularExpressions.Regex.IsMatch(c, @"^factory\.auth=[^;]+"));
 }

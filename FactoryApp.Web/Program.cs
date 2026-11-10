@@ -20,7 +20,6 @@ builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.Cookies.C
             : CookieSecurePolicy.Always;
         options.Cookie.IsEssential = true;
         options.LoginPath = "/Login";
-        options.LogoutPath = "/Logout";
         options.AccessDeniedPath = "/Login";
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;

@@ -31,6 +31,7 @@ public class LoginModel(AuthService auth) : PageModel
     {
         if (!ModelState.IsValid)
         {
+            Password = string.Empty;
             return Page();
         }
 
