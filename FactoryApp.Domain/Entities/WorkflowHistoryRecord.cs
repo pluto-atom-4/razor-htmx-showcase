@@ -43,4 +43,10 @@ public class WorkflowHistoryRecord
     public DateTime? ExecutionStarted { get; set; }
     public DateTime? ExecutionCompleted { get; set; }
     public long? ElapsedMilliseconds { get; set; }
+
+    [MaxLength(50)]
+    public string? Station { get; set; }
+
+    [MaxLength(256)]
+    public string? Operator { get; set; }
 }
