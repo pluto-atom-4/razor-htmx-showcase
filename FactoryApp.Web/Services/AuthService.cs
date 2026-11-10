@@ -60,16 +60,16 @@ public sealed class AuthService(FactoryDbContext db)
         // Malformed claims JSON is skipped so one bad row cannot block login.
         try
         {
-            var customClaims = JsonSerializer.Deserialize<Dictionary<string, string?>>(user.Claims) ?? new();
-            foreach (var (claimName, claimValue) in customClaims)
+            var customClaims = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(user.Claims) ?? new();
+            foreach (var (claimName, element) in customClaims)
             {
                 // A custom claim must never add a second Role or identity claim.
-                if (claimValue is null || claims.Any(c => c.Type == claimName))
+                if (element.ValueKind != JsonValueKind.String || claims.Any(c => c.Type == claimName))
                 {
                     continue;
                 }
 
-                claims.Add(new Claim(claimName, claimValue));
+                claims.Add(new Claim(claimName, element.GetString()!));
             }
         }
         catch (JsonException)

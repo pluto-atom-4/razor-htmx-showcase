@@ -154,6 +154,22 @@ public class AuthServiceTests(SqlFixture sql) : IClassFixture<SqlFixture>, IAsyn
     }
 
     [Fact]
+    public async Task Non_string_custom_claim_values_are_skipped_without_dropping_the_rest()
+    {
+        var email = await InsertUserAsync("{\"count\":5,\"flag\":true,\"nested\":{\"a\":1},\"list\":[1],\"shift\":\"night\"}");
+        await using var ctx = CreateContext();
+
+        var principal = await new AuthService(ctx).ValidateCredentialsAsync(email, SeededPassword);
+
+        Assert.NotNull(principal);
+        Assert.Equal("night", principal.FindFirst("shift")?.Value);
+        Assert.Null(principal.FindFirst("count"));
+        Assert.Null(principal.FindFirst("flag"));
+        Assert.Null(principal.FindFirst("nested"));
+        Assert.Null(principal.FindFirst("list"));
+    }
+
+    [Fact]
     public async Task Password_longer_than_72_bytes_is_rejected_even_if_prefix_matches()
     {
         var exactly72 = new string('p', 72);
