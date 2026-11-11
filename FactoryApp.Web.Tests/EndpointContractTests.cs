@@ -61,7 +61,7 @@ public class EndpointContractTests(WebAppFactory factory) : IClassFixture<WebApp
     }
 
     [Fact]
-    public async Task Anonymous_change_status_post_without_a_token_is_rejected_and_writes_nothing()
+    public async Task Anonymous_change_status_post_without_a_token_redirects_to_login_and_writes_nothing()
     {
         var buildId = await BoardDb.AddBuildAsync(factory, BuildStatus.Pending);
         using var client = AuthTestClient.CreateClient(factory);
@@ -107,7 +107,9 @@ public class EndpointContractTests(WebAppFactory factory) : IClassFixture<WebApp
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(AuthTestClient.HtmlMediaType, response.Content.Headers.ContentType?.MediaType);
-        Assert.DoesNotContain("<html", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("hx-swap-oob=\"outerHTML\"", body);
+        Assert.DoesNotContain("<html", body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -122,7 +124,9 @@ public class EndpointContractTests(WebAppFactory factory) : IClassFixture<WebApp
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         Assert.Equal(AuthTestClient.HtmlMediaType, response.Content.Headers.ContentType?.MediaType);
-        Assert.DoesNotContain("<html", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("class=\"error\"", body);
+        Assert.DoesNotContain("<html", body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -146,7 +150,7 @@ public class EndpointContractTests(WebAppFactory factory) : IClassFixture<WebApp
     }
 
     [Fact]
-    public async Task Login_cookie_is_http_only_same_site_lax_and_secure()
+    public async Task Login_cookie_is_http_only_same_site_lax_and_secure_over_https()
     {
         using var client = AuthTestClient.CreateClient(factory);
 

@@ -159,9 +159,11 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
     {
         using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
 
-        await client.GetAsync("/Logout");
-        var index = await client.GetAsync("/");
+        using var logout = await client.GetAsync("/Logout");
+        using var index = await client.GetAsync("/");
 
+        Assert.Equal(HttpStatusCode.NotFound, logout.StatusCode);
+        Assert.False(AuthTestClient.ClearsAuthCookie(logout));
         Assert.Equal(HttpStatusCode.OK, index.StatusCode);
     }
 
