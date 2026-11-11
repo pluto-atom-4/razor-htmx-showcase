@@ -1,19 +1,28 @@
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content="@Antiforgery.GetAndStoreTokens(Context).RequestToken" />
     <title>@(ViewData["Title"] ?? "FactoryApp")</title>
     <link rel="stylesheet" href="~/css/app.css" />
 </head>
 <body>
     <header>
         <strong>FactoryApp</strong>
+        @if (User.Identity?.IsAuthenticated == true)
+        {
+            <form method="post" asp-page="/Login" asp-page-handler="Logout">
+                <button type="submit">Log out</button>
+            </form>
+        }
     </header>
     <main>
         @RenderBody()
     </main>
     <script src="~/lib/htmx/htmx.min.js"></script>
     <script src="~/lib/htmx/sse.js"></script>
+    <script src="~/app.js"></script>
 </body>
 </html>
