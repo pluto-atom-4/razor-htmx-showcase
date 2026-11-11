@@ -11,6 +11,7 @@ public static class AuthTestClient
     public const string LoginPath = "/Login";
     public const string LogoutPath = "/Login?handler=Logout";
     public const string ChangeStatusPath = "/Board?handler=ChangeStatus";
+    public const string SubmitTestRunPath = "/Board?handler=SubmitTestRun";
     public const string HtmlMediaType = "text/html";
 
     // Secure cookies are only sent over https, and the auth cookie is Secure outside Development.
