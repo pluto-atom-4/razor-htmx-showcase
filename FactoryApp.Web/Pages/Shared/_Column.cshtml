@@ -1,6 +1,9 @@
 @model BoardModel.BoardColumn
+@{
+    var outOfBand = (ViewData["Oob"] as bool?) == true ? "outerHTML" : null;
+}
 
-<section id="column-@Model.Status" class="column">
+<section id="column-@Model.Status" class="column" hx-swap-oob="@outOfBand">
     <h2>@Model.Status <span id="count-@Model.Status" class="count">@Model.Cards.Count</span></h2>
     <div id="cards-@Model.Status" class="cards">
         @foreach (var card in Model.Cards)

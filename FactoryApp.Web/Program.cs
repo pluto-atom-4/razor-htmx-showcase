@@ -10,6 +10,7 @@ builder.Services.AddDbContext<FactoryDbContext>((sp, options) =>
 builder.Services.AddRazorPages();
 
 builder.Services.AddScoped<FactoryApp.Web.Services.AuthService>();
+builder.Services.AddScoped<BuildService>();
 builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
