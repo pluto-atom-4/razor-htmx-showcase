@@ -12,11 +12,21 @@ public class BuildServiceCreateBuildTests(SqlFixture sql) : IClassFixture<SqlFix
     // Rejected creates use their own timestamp so the count below cannot see rows from other tests.
     private static readonly DateTime RejectedAt = new(2026, 11, 10, 9, 0, 0, DateTimeKind.Utc);
 
+    private const string NameError = "Name is required and must be at most 256 characters.";
+    private const string DescriptionError = "Description must be at most 1000 characters.";
+
     public static IEnumerable<object[]> InvalidNames() =>
     [
         [""],
         [" "],
         [new string('A', 257)],
+    ];
+
+    public static IEnumerable<object?[]> BlankDescriptions() =>
+    [
+        [null],
+        [""],
+        ["   "],
     ];
 
     [Fact]
@@ -50,7 +60,7 @@ public class BuildServiceCreateBuildTests(SqlFixture sql) : IClassFixture<SqlFix
         var result = await new BuildService(ctx, new FakeTime(RejectedAt)).CreateBuildAsync(name);
 
         Assert.Equal(TransitionOutcome.Invalid, result.Outcome);
-        Assert.NotNull(result.Error);
+        Assert.Equal(NameError, result.Error);
         Assert.Null(result.BuildId);
         Assert.Equal(0, await CountBuildsAt(RejectedAt));
     }
@@ -64,9 +74,59 @@ public class BuildServiceCreateBuildTests(SqlFixture sql) : IClassFixture<SqlFix
             .CreateBuildAsync("Press Line 4", new string('d', 1001));
 
         Assert.Equal(TransitionOutcome.Invalid, result.Outcome);
-        Assert.NotNull(result.Error);
+        Assert.Equal(DescriptionError, result.Error);
         Assert.Null(result.BuildId);
         Assert.Equal(0, await CountBuildsAt(RejectedAt));
+    }
+
+    [Fact]
+    public async Task Name_at_limit_is_accepted()
+    {
+        await using var ctx = CreateContext();
+
+        var result = await new BuildService(ctx, new FakeTime(T0)).CreateBuildAsync(new string('N', 256));
+
+        Assert.Equal(TransitionOutcome.Applied, result.Outcome);
+        Assert.NotNull(result.BuildId);
+        Assert.Equal(256, (await StoredBuild(result.BuildId.Value)).Name.Length);
+    }
+
+    [Fact]
+    public async Task Description_at_limit_is_accepted()
+    {
+        await using var ctx = CreateContext();
+        var description = new string('d', 1000);
+
+        var result = await new BuildService(ctx, new FakeTime(T0)).CreateBuildAsync("Press Line 4", description);
+
+        Assert.Equal(TransitionOutcome.Applied, result.Outcome);
+        Assert.NotNull(result.BuildId);
+        Assert.Equal(description, (await StoredBuild(result.BuildId.Value)).Description);
+    }
+
+    [Theory]
+    [MemberData(nameof(BlankDescriptions))]
+    public async Task Blank_description_is_stored_as_null(string? description)
+    {
+        await using var ctx = CreateContext();
+
+        var result = await new BuildService(ctx, new FakeTime(T0)).CreateBuildAsync("Press Line 4", description);
+
+        Assert.Equal(TransitionOutcome.Applied, result.Outcome);
+        Assert.NotNull(result.BuildId);
+        Assert.Null((await StoredBuild(result.BuildId.Value)).Description);
+    }
+
+    [Fact]
+    public async Task Description_is_trimmed_before_it_is_stored()
+    {
+        await using var ctx = CreateContext();
+
+        var result = await new BuildService(ctx, new FakeTime(T0)).CreateBuildAsync("Press Line 4", "  Night shift  ");
+
+        Assert.Equal(TransitionOutcome.Applied, result.Outcome);
+        Assert.NotNull(result.BuildId);
+        Assert.Equal("Night shift", (await StoredBuild(result.BuildId.Value)).Description);
     }
 
     private FactoryDbContext CreateContext() =>

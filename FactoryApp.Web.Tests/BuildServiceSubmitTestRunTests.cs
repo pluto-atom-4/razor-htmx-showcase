@@ -15,20 +15,24 @@ public class BuildServiceSubmitTestRunTests(SqlFixture sql) : IClassFixture<SqlF
     private const string Station = "TEST-BAY-1";
     private const string Operator = "op@example.com";
 
+    private const string StationError = "Station is required and must be at most 50 characters.";
+    private const string OperatorError = "Operator is required and must be at most 256 characters.";
+
     public static IEnumerable<object[]> FailureCodeValues() =>
-    [
-        [FailureCodes.Leak],
-        [FailureCodes.Overpressure],
-        [FailureCodes.SensorFault],
-        [FailureCodes.Timeout],
-        [FailureCodes.Other],
-    ];
+        FailureCodes.All.Select(code => new object[] { code });
 
     public static IEnumerable<object?[]> MissingFailureCodes() =>
     [
         [null],
         [""],
         [" "],
+        ["   "],
+    ];
+
+    public static IEnumerable<object[]> BlankPassedCodes() =>
+    [
+        [""],
+        ["   "],
     ];
 
     public static IEnumerable<object[]> UnknownFailureCodes() =>
@@ -51,14 +55,18 @@ public class BuildServiceSubmitTestRunTests(SqlFixture sql) : IClassFixture<SqlF
         [BuildStatus.Failed],
     ];
 
-    public static IEnumerable<object[]> BadStationOrOperator() =>
+    public static IEnumerable<object[]> BadStations() =>
     [
-        ["", Operator],
-        [" ", Operator],
-        [new string('A', 51), Operator],
-        [Station, ""],
-        [Station, " "],
-        [Station, new string('a', 257)],
+        ["", StationError],
+        [" ", StationError],
+        [new string('A', 51), StationError],
+    ];
+
+    public static IEnumerable<object[]> BadOperators() =>
+    [
+        ["", OperatorError],
+        [" ", OperatorError],
+        [new string('a', 257), OperatorError],
     ];
 
     [Theory]
@@ -214,19 +222,72 @@ public class BuildServiceSubmitTestRunTests(SqlFixture sql) : IClassFixture<SqlF
     }
 
     [Theory]
-    [MemberData(nameof(BadStationOrOperator))]
-    public async Task Blank_or_oversized_station_or_operator_is_rejected_and_writes_nothing(string station, string operatorName)
+    [MemberData(nameof(BadStations))]
+    public async Task Blank_or_oversized_station_is_rejected_and_writes_nothing(string station, string expectedError)
     {
         var build = await SeedBuild(BuildStatus.Running);
         await using var ctx = CreateContext();
 
         var result = await new BuildService(ctx, new FakeTime(T0))
-            .SubmitTestRunAsync(build.Id, TestStatus.Failed, station, operatorName, FailureCodes.Leak);
+            .SubmitTestRunAsync(build.Id, TestStatus.Failed, station, Operator, FailureCodes.Leak);
 
         Assert.Equal(TransitionOutcome.Invalid, result.Outcome);
-        Assert.NotNull(result.Error);
+        Assert.Equal(expectedError, result.Error);
         Assert.Null(result.Event);
         await AssertNothingWritten(build.Id);
+    }
+
+    [Theory]
+    [MemberData(nameof(BadOperators))]
+    public async Task Blank_or_oversized_operator_is_rejected_and_writes_nothing(string operatorName, string expectedError)
+    {
+        var build = await SeedBuild(BuildStatus.Running);
+        await using var ctx = CreateContext();
+
+        var result = await new BuildService(ctx, new FakeTime(T0))
+            .SubmitTestRunAsync(build.Id, TestStatus.Failed, Station, operatorName, FailureCodes.Leak);
+
+        Assert.Equal(TransitionOutcome.Invalid, result.Outcome);
+        Assert.Equal(expectedError, result.Error);
+        Assert.Null(result.Event);
+        await AssertNothingWritten(build.Id);
+    }
+
+    [Fact]
+    public async Task Station_at_limit_and_operator_at_limit_are_accepted()
+    {
+        var station = new string('S', 50);
+        var operatorName = new string('o', 256);
+        var build = await SeedBuild(BuildStatus.Running);
+        await using var ctx = CreateContext();
+
+        var result = await new BuildService(ctx, new FakeTime(T0))
+            .SubmitTestRunAsync(build.Id, TestStatus.Passed, station, operatorName, null);
+
+        Assert.Equal(TransitionOutcome.Applied, result.Outcome);
+        var history = await HistoryFor(build.Id);
+        Assert.Equal(2, history.Count);
+        Assert.All(history, row =>
+        {
+            Assert.Equal(station, row.Station);
+            Assert.Equal(operatorName, row.Operator);
+        });
+    }
+
+    [Theory]
+    [MemberData(nameof(BlankPassedCodes))]
+    public async Task Passed_run_with_blank_code_is_stored_without_code(string code)
+    {
+        var build = await SeedBuild(BuildStatus.Running);
+        await using var ctx = CreateContext();
+
+        var result = await new BuildService(ctx, new FakeTime(T0))
+            .SubmitTestRunAsync(build.Id, TestStatus.Passed, Station, Operator, code);
+
+        Assert.Equal(TransitionOutcome.Applied, result.Outcome);
+        var run = Assert.Single(await TestRunsFor(build.Id));
+        Assert.Null(run.FailureCode);
+        Assert.Equal("Passed", run.Result);
     }
 
     [Fact]
@@ -284,6 +345,26 @@ public class BuildServiceSubmitTestRunTests(SqlFixture sql) : IClassFixture<SqlF
         await AssertNothingWritten(build.Id);
     }
 
+    [Fact]
+    public async Task Build_status_changed_before_guarded_update_is_rejected_and_writes_nothing()
+    {
+        var build = await SeedBuild(BuildStatus.Running);
+        await using var ctx = CreateContext(new ExternalChangeBeforeUpdate(sql.ConnectionString, conn =>
+            ExecuteAsync(conn, "UPDATE dbo.Builds SET Status = @status WHERE Id = @id",
+                ("@status", (int)BuildStatus.Complete), ("@id", build.Id))));
+
+        var result = await new BuildService(ctx, new FakeTime(T0.AddMinutes(1)))
+            .SubmitTestRunAsync(build.Id, TestStatus.Passed, Station, Operator, null);
+
+        Assert.Equal(TransitionOutcome.Invalid, result.Outcome);
+        Assert.Equal("Build status changed; reload and retry.", result.Error);
+        Assert.Null(result.Event);
+        var stored = await StoredBuild(build.Id);
+        Assert.Equal(BuildStatus.Complete, stored.Status);
+        Assert.Equal(T0, stored.UpdatedAt);
+        await AssertNothingWritten(build.Id);
+    }
+
     private static void AssertTestRunRow(WorkflowHistoryRecord row, Build build, Guid testRunId)
     {
         Assert.Equal("TestRun", row.ActivityName);
@@ -291,7 +372,8 @@ public class BuildServiceSubmitTestRunTests(SqlFixture sql) : IClassFixture<SqlF
         Assert.Equal(Station, row.Station);
         Assert.Equal(Operator, row.Operator);
         Assert.NotNull(row.StateSnapshot);
-        Assert.Equal(testRunId, JsonDocument.Parse(row.StateSnapshot).RootElement.GetProperty("testRunId").GetGuid());
+        using var snapshot = JsonDocument.Parse(row.StateSnapshot);
+        Assert.Equal(testRunId, snapshot.RootElement.GetProperty("testRunId").GetGuid());
     }
 
     private async Task AssertNothingWritten(Guid buildId)

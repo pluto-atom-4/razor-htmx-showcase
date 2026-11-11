@@ -19,13 +19,14 @@ public sealed class BuildService(FactoryDbContext db, TimeProvider? time = null)
 
     public async Task<CreateBuildResult> CreateBuildAsync(string name, string? description = null, CancellationToken ct = default)
     {
-        var trimmedName = name?.Trim() ?? string.Empty;
+        var trimmedName = name.Trim();
         if (trimmedName.Length == 0 || trimmedName.Length > MaxBuildNameLength)
         {
             return new CreateBuildResult(TransitionOutcome.Invalid,
                 $"Name is required and must be at most {MaxBuildNameLength} characters.");
         }
 
+        description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
         if (description is not null && description.Length > MaxDescriptionLength)
         {
             return new CreateBuildResult(TransitionOutcome.Invalid,
@@ -198,7 +199,7 @@ public sealed class BuildService(FactoryDbContext db, TimeProvider? time = null)
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
-        // Only the workflow id is written here: Status and UpdatedAt stay as the build's own transitions left them.
+        // UpdatedAt must not move: ApplyAsync reads it as the Running start for elapsed time.
         var updated = await db.Builds
             .Where(b => b.Id == buildId && b.Status == BuildStatus.Running && b.UpdatedAt == build.UpdatedAt)
             .ExecuteUpdateAsync(s => s.SetProperty(b => b.WorkflowInstanceId, workflowInstanceId), ct);
