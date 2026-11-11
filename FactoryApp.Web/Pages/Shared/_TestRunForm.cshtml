@@ -1,0 +1,23 @@
+@model BoardModel.BoardCard
+@using FactoryApp.Domain
+<form id="testrun-form-@Model.Id" method="post" asp-page="/Board" asp-page-handler="SubmitTestRun"
+      hx-post="@Url.Page("/Board", "SubmitTestRun")" hx-target="#card-error-@Model.Id" hx-swap="innerHTML" hx-disabled-elt="find button">
+    <input type="hidden" name="BuildId" value="@Model.Id" />
+    <label for="testrun-station-@Model.Id">Test station</label>
+    <select id="testrun-station-@Model.Id" name="Station">
+        @foreach (var station in BoardModel.Stations)
+        {
+            <option value="@station">@station</option>
+        }
+    </select>
+    <label for="failure-code-@Model.Id">Failure code</label>
+    <select id="failure-code-@Model.Id" name="FailureCode">
+        <option value="">(no code)</option>
+        @foreach (var code in FailureCodes.All)
+        {
+            <option value="@code">@code</option>
+        }
+    </select>
+    <button type="submit" name="Result" value="Passed" aria-label="Passed: @Model.Name">Passed</button>
+    <button type="submit" name="Result" value="Failed" aria-label="Failed: @Model.Name">Failed</button>
+</form>

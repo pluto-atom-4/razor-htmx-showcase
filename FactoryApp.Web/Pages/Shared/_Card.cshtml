@@ -3,5 +3,13 @@
     <h3>@Model.Name</h3>
     <time>@Model.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture)</time>
     <partial name="_StatusForm" model="Model" />
+    @if (Model.Status == BuildStatus.Running)
+    {
+        <partial name="_TestRunForm" model="Model" />
+    }
+    @if (Model.LatestTest is not null)
+    {
+        <p class="test-result" id="test-result-@Model.Id">Last test: @Model.LatestTest.Status@(Model.LatestTest.FailureCode is { } code ? $" ({code})" : "")</p>
+    }
     <div id="card-error-@Model.Id" class="card-error"></div>
 </article>

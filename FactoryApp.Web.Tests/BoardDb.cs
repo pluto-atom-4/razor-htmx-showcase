@@ -41,6 +41,39 @@ internal static class BoardDb
             .ToListAsync();
     }
 
+    public static async Task<List<TestRun>> TestRunsAsync(WebAppFactory factory, Guid buildId)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<FactoryDbContext>();
+        return await db.TestRuns.AsNoTracking()
+            .Where(t => t.BuildId == buildId)
+            .ToListAsync();
+    }
+
+    public static FormUrlEncodedContent SubmitTestRunForm(
+        string? token, Guid buildId, string result, string? station, string? failureCode)
+    {
+        var form = new Dictionary<string, string>
+        {
+            ["BuildId"] = buildId.ToString(),
+            ["Result"] = result,
+        };
+        if (station is not null)
+        {
+            form["Station"] = station;
+        }
+        if (failureCode is not null)
+        {
+            form["FailureCode"] = failureCode;
+        }
+        if (token is not null)
+        {
+            form["__RequestVerificationToken"] = token;
+        }
+
+        return new FormUrlEncodedContent(form);
+    }
+
     public static FormUrlEncodedContent MoveForm(string? token, Guid buildId, string newStatus, string? station)
     {
         var form = new Dictionary<string, string>
