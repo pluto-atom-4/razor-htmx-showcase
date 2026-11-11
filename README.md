@@ -80,6 +80,21 @@ docker compose down
 
 `docker compose down -v` also deletes the SQL Server data volume.
 
+### Troubleshooting: line endings
+
+If git converts line endings on checkout (`git config core.autocrlf` is `true`, common on Windows and WSL setups), a fresh clone has CRLF in `.env.example` and `scripts/apply-migrations.sh`. Then `.env` gets CRLF too, and:
+
+- after `set -a; . ./.env; set +a`, `docker compose` fails with `invalid hostPort: 1433`;
+- `./scripts/apply-migrations.sh` fails with `set: pipefail: invalid option name`.
+
+Fix, then run the step again:
+
+```bash
+sed -i 's/\r$//' .env scripts/apply-migrations.sh
+```
+
+To avoid it for a new clone, run `git config core.autocrlf input` before cloning (or set it globally).
+
 ## Tests
 
 ```bash
