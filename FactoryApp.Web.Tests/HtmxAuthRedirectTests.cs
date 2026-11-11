@@ -68,6 +68,54 @@ public class HtmxAuthRedirectTests(WebAppFactory factory) : IClassFixture<WebApp
         Assert.False(response.Headers.Contains("HX-Redirect"));
     }
 
+    [Fact]
+    public async Task Hx_redirect_returns_to_the_current_page_not_the_post_url()
+    {
+        using var client = AuthTestClient.CreateClient(factory);
+        using var request = new HttpRequestMessage(HttpMethod.Post, AuthTestClient.ChangeStatusPath)
+        {
+            Content = BoardDb.MoveForm(null, Guid.NewGuid(), "Running", Station),
+        };
+        request.Headers.Add("HX-Request", "true");
+        request.Headers.Add("HX-Current-URL", "https://localhost/Board");
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal($"{AuthTestClient.LoginPath}?ReturnUrl=%2FBoard", HxRedirect(response));
+    }
+
+    [Fact]
+    public async Task Hx_current_url_on_another_host_is_ignored()
+    {
+        using var client = AuthTestClient.CreateClient(factory);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/Board");
+        request.Headers.Add("HX-Request", "true");
+        request.Headers.Add("HX-Current-URL", "https://evil.example/steal");
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var target = HxRedirect(response);
+        Assert.DoesNotContain("evil", target);
+        Assert.StartsWith($"{AuthTestClient.LoginPath}?ReturnUrl=%2FBoard", target);
+    }
+
+    [Fact]
+    public async Task Plain_xhr_keeps_the_framework_default_of_401_with_a_location_header()
+    {
+        using var client = AuthTestClient.CreateClient(factory);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/Board");
+        request.Headers.Add("X-Requested-With", "XMLHttpRequest");
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.NotNull(response.Headers.Location);
+        Assert.StartsWith(AuthTestClient.LoginPath, HtmlAssert.PathAndQuery(response));
+        Assert.False(response.Headers.Contains("HX-Redirect"));
+    }
+
     private static string HxRedirect(HttpResponseMessage response)
     {
         Assert.True(response.Headers.TryGetValues("HX-Redirect", out var values), "HX-Redirect header missing.");
