@@ -15,7 +15,7 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
         var response = await client.GetAsync("/");
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        Assert.StartsWith("/Login?ReturnUrl=%2F", PathAndQuery(response));
+        Assert.StartsWith("/Login?ReturnUrl=%2F", HtmlAssert.PathAndQuery(response));
     }
 
     [Fact]
@@ -33,7 +33,7 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
     {
         using var client = AuthTestClient.CreateClient(factory);
 
-        var response = await client.GetAsync("/Login");
+        var response = await client.GetAsync(AuthTestClient.LoginPath);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -58,7 +58,7 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
             ["Password"] = AuthTestClient.SeededPassword,
         };
 
-        var response = await client.PostAsync("/Login", new FormUrlEncodedContent(form));
+        var response = await client.PostAsync(AuthTestClient.LoginPath, new FormUrlEncodedContent(form));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -72,7 +72,7 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.Equal("/", response.Headers.Location?.ToString());
-        Assert.True(SetsAuthCookie(response));
+        Assert.True(AuthTestClient.SetsAuthCookie(response));
 
         var index = await client.GetAsync("/");
         Assert.Equal(HttpStatusCode.OK, index.StatusCode);
@@ -88,7 +88,7 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains(InvalidCredentialsMessage, body);
-        Assert.False(SetsAuthCookie(response));
+        Assert.False(AuthTestClient.SetsAuthCookie(response));
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains(InvalidCredentialsMessage, body);
-        Assert.False(SetsAuthCookie(response));
+        Assert.False(AuthTestClient.SetsAuthCookie(response));
     }
 
     [Theory]
@@ -125,7 +125,7 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
     {
         using var client = AuthTestClient.CreateClient(factory);
 
-        var response = await client.PostAsync("/Login?handler=Logout", new FormUrlEncodedContent(new Dictionary<string, string>()));
+        var response = await client.PostAsync(AuthTestClient.LogoutPath, new FormUrlEncodedContent(new Dictionary<string, string>()));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -137,10 +137,10 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
         var token = await AuthTestClient.FetchAntiforgeryTokenAsync(client);
         var form = new Dictionary<string, string> { ["__RequestVerificationToken"] = token };
 
-        var response = await client.PostAsync("/Login?handler=Logout", new FormUrlEncodedContent(form));
+        var response = await client.PostAsync(AuthTestClient.LogoutPath, new FormUrlEncodedContent(form));
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        Assert.Equal("/Login", response.Headers.Location?.ToString());
+        Assert.Equal(AuthTestClient.LoginPath, response.Headers.Location?.ToString());
     }
 
     [Fact]
@@ -148,7 +148,7 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
     {
         using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
 
-        var response = await client.GetAsync("/Login");
+        var response = await client.GetAsync(AuthTestClient.LoginPath);
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.Equal("/", response.Headers.Location?.ToString());
@@ -177,20 +177,10 @@ public class LoginPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
             ["__RequestVerificationToken"] = token,
         };
 
-        var response = await client.PostAsync("/Login", new FormUrlEncodedContent(form));
+        var response = await client.PostAsync(AuthTestClient.LoginPath, new FormUrlEncodedContent(form));
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.DoesNotContain(AuthTestClient.SeededPassword, body);
     }
-
-    // The cookie middleware redirects with an absolute URL; page redirects are relative.
-    private static string? PathAndQuery(HttpResponseMessage response) =>
-        response.Headers.Location is { IsAbsoluteUri: true } absolute
-            ? absolute.PathAndQuery
-            : response.Headers.Location?.OriginalString;
-
-    private static bool SetsAuthCookie(HttpResponseMessage response) =>
-        response.Headers.TryGetValues("Set-Cookie", out var cookies)
-        && cookies.Any(c => System.Text.RegularExpressions.Regex.IsMatch(c, @"^factory\.auth=[^;]+"));
 }

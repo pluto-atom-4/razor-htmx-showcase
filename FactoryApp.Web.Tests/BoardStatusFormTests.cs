@@ -1,10 +1,7 @@
 using System.Net;
 using System.Text.RegularExpressions;
-using FactoryApp.Domain;
 using FactoryApp.Domain.Entities;
 using FactoryApp.Web.Pages;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace FactoryApp.Web.Tests;
 
@@ -16,7 +13,7 @@ public class BoardStatusFormTests(WebAppFactory factory) : IClassFixture<WebAppF
     [Fact]
     public async Task Pending_card_offers_only_the_running_button()
     {
-        var buildId = await AddBuildAsync(BuildStatus.Pending);
+        var buildId = await BoardDb.AddBuildAsync(factory, BuildStatus.Pending);
         using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
 
         var form = FormFor(await client.GetStringAsync("/Board"), buildId);
@@ -27,7 +24,7 @@ public class BoardStatusFormTests(WebAppFactory factory) : IClassFixture<WebAppF
     [Fact]
     public async Task Running_card_offers_complete_and_failed_buttons()
     {
-        var buildId = await AddBuildAsync(BuildStatus.Running);
+        var buildId = await BoardDb.AddBuildAsync(factory, BuildStatus.Running);
         using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
 
         var form = FormFor(await client.GetStringAsync("/Board"), buildId);
@@ -38,7 +35,7 @@ public class BoardStatusFormTests(WebAppFactory factory) : IClassFixture<WebAppF
     [Fact]
     public async Task Complete_card_renders_no_form()
     {
-        var buildId = await AddBuildAsync(BuildStatus.Complete);
+        var buildId = await BoardDb.AddBuildAsync(factory, BuildStatus.Complete);
         using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
 
         var body = await client.GetStringAsync("/Board");
@@ -50,7 +47,7 @@ public class BoardStatusFormTests(WebAppFactory factory) : IClassFixture<WebAppF
     [Fact]
     public async Task Every_card_has_an_error_slot()
     {
-        await AddBuildAsync(BuildStatus.Pending);
+        await BoardDb.AddBuildAsync(factory, BuildStatus.Pending);
         using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
 
         var body = await client.GetStringAsync("/Board");
@@ -66,7 +63,7 @@ public class BoardStatusFormTests(WebAppFactory factory) : IClassFixture<WebAppF
     [Fact]
     public async Task Form_has_hidden_build_id_three_stations_htmx_attributes_and_token()
     {
-        var buildId = await AddBuildAsync(BuildStatus.Pending);
+        var buildId = await BoardDb.AddBuildAsync(factory, BuildStatus.Pending);
         using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
 
         var form = FormFor(await client.GetStringAsync("/Board"), buildId);
@@ -87,14 +84,13 @@ public class BoardStatusFormTests(WebAppFactory factory) : IClassFixture<WebAppF
     [Fact]
     public async Task Scraped_form_fields_post_to_the_handler_and_move_the_card()
     {
-        var buildId = await AddBuildAsync(BuildStatus.Pending);
+        var buildId = await BoardDb.AddBuildAsync(factory, BuildStatus.Pending);
         using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
         var form = FormFor(await client.GetStringAsync("/Board"), buildId);
 
         var action = WebUtility.HtmlDecode(Regex.Match(form, "hx-post=\"([^\"]+)\"").Groups[1].Value);
-        var token = WebUtility.HtmlDecode(
-            Regex.Match(form, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value);
-        var scrapedBuildId = Regex.Match(form, "name=\"BuildId\" value=\"([^\"]+)\"").Groups[1].Value;
+        var token = WebUtility.HtmlDecode(HtmlAssert.InputValue(form, "__RequestVerificationToken"));
+        var scrapedBuildId = HtmlAssert.InputValue(form, "BuildId");
         var station = Regex.Match(form, "<option value=\"([^\"]+)\"").Groups[1].Value;
         var running = Regex.Match(form, "name=\"NewStatus\" value=\"(Running)\"");
         Assert.True(running.Success, "Running button not found.");
@@ -110,8 +106,8 @@ public class BoardStatusFormTests(WebAppFactory factory) : IClassFixture<WebAppF
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains($"id=\"card-{buildId}\"", Section(body, "Running"));
-        Assert.Equal(BuildStatus.Running, await StatusOfAsync(buildId));
+        Assert.Contains($"id=\"card-{buildId}\"", HtmlAssert.Section(body, "Running"));
+        Assert.Equal(BuildStatus.Running, await BoardDb.StatusOfAsync(factory, buildId));
     }
 
     [Fact]
@@ -139,26 +135,6 @@ public class BoardStatusFormTests(WebAppFactory factory) : IClassFixture<WebAppF
         Assert.Contains("htmx:responseError", body);
     }
 
-    private async Task<Guid> AddBuildAsync(BuildStatus status)
-    {
-        using var scope = factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<FactoryDbContext>();
-        var build = new Build { Id = Guid.NewGuid(), Name = $"S1-11b build {Guid.NewGuid():N}", Status = status };
-        db.Builds.Add(build);
-        await db.SaveChangesAsync();
-        return build.Id;
-    }
-
-    private async Task<BuildStatus> StatusOfAsync(Guid buildId)
-    {
-        using var scope = factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<FactoryDbContext>();
-        return await db.Builds.AsNoTracking()
-            .Where(b => b.Id == buildId)
-            .Select(b => b.Status)
-            .SingleAsync();
-    }
-
     private static string FormFor(string body, Guid buildId)
     {
         var match = Regex.Match(body, $"<form[^>]*id=\"form-{buildId}\"[\\s\\S]*?</form>");
@@ -170,13 +146,4 @@ public class BoardStatusFormTests(WebAppFactory factory) : IClassFixture<WebAppF
         Regex.Matches(form, "name=\"NewStatus\" value=\"([^\"]+)\"")
             .Select(m => m.Groups[1].Value)
             .ToArray();
-
-    private static string Section(string body, string status)
-    {
-        var start = body.IndexOf($"id=\"column-{status}\"", StringComparison.Ordinal);
-        Assert.True(start >= 0, $"Column {status} not found.");
-        var end = body.IndexOf("</section>", start, StringComparison.Ordinal);
-        Assert.True(end >= 0, $"Column {status} is not closed.");
-        return body[start..end];
-    }
 }
