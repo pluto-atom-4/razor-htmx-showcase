@@ -6,7 +6,6 @@ namespace FactoryApp.Web.Tests;
 [Trait("Category", "Integration")]
 public class LayoutAntiforgeryTests(WebAppFactory factory) : IClassFixture<WebAppFactory>
 {
-    private static readonly Regex CsrfMeta = new("<meta[^>]*name=\"csrf-token\"[^>]*content=\"([^\"]+)\"", RegexOptions.Compiled);
     private static readonly Regex LogoutForm = new("<form[^>]*action=\"/Login\\?handler=Logout\"[^>]*>[\\s\\S]*?</form>", RegexOptions.Compiled);
 
     [Fact]
@@ -18,8 +17,7 @@ public class LayoutAntiforgeryTests(WebAppFactory factory) : IClassFixture<WebAp
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var meta = CsrfMeta.Match(body);
-        Assert.True(meta.Success, "Non-empty csrf-token meta tag not found.");
+        Assert.NotEmpty(HtmlAssert.MetaContent(body, "csrf-token"));
         Assert.Contains("src=\"/app.js\"", body);
         var form = LogoutForm.Match(body);
         Assert.True(form.Success, "Logout form posting to Login?handler=Logout not found.");
@@ -31,9 +29,9 @@ public class LayoutAntiforgeryTests(WebAppFactory factory) : IClassFixture<WebAp
     {
         using var client = AuthTestClient.CreateClient(factory);
 
-        var body = await client.GetStringAsync("/Login");
+        var body = await client.GetStringAsync(AuthTestClient.LoginPath);
 
-        Assert.Matches(CsrfMeta, body);
+        Assert.NotEmpty(HtmlAssert.MetaContent(body, "csrf-token"));
         Assert.DoesNotContain("handler=Logout", body);
     }
 
@@ -58,15 +56,15 @@ public class LayoutAntiforgeryTests(WebAppFactory factory) : IClassFixture<WebAp
         var token = await AuthTestClient.FetchAntiforgeryTokenAsync(client, "/");
         var form = new Dictionary<string, string> { ["__RequestVerificationToken"] = token };
 
-        var logout = await client.PostAsync("/Login?handler=Logout", new FormUrlEncodedContent(form));
+        var logout = await client.PostAsync(AuthTestClient.LogoutPath, new FormUrlEncodedContent(form));
 
         Assert.Equal(HttpStatusCode.Redirect, logout.StatusCode);
-        Assert.Equal("/Login", logout.Headers.Location?.ToString());
-        Assert.True(ClearsAuthCookie(logout));
+        Assert.Equal(AuthTestClient.LoginPath, logout.Headers.Location?.ToString());
+        Assert.True(AuthTestClient.ClearsAuthCookie(logout));
 
         var index = await client.GetAsync("/");
         Assert.Equal(HttpStatusCode.Redirect, index.StatusCode);
-        Assert.StartsWith("/Login", PathAndQuery(index));
+        Assert.StartsWith(AuthTestClient.LoginPath, HtmlAssert.PathAndQuery(index));
     }
 
     [Fact]
@@ -74,11 +72,8 @@ public class LayoutAntiforgeryTests(WebAppFactory factory) : IClassFixture<WebAp
     {
         using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
         var token = await MetaCsrfTokenAsync(client);
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/Login?handler=Logout")
-        {
-            Content = new FormUrlEncodedContent(new Dictionary<string, string>()),
-        };
-        request.Headers.Add("RequestVerificationToken", token);
+        using var request = AuthTestClient.PostWithHeaderToken(
+            AuthTestClient.LogoutPath, token, new FormUrlEncodedContent(new Dictionary<string, string>()));
 
         var response = await client.SendAsync(request);
 
@@ -90,11 +85,8 @@ public class LayoutAntiforgeryTests(WebAppFactory factory) : IClassFixture<WebAp
     {
         using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
         _ = await MetaCsrfTokenAsync(client);
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/Login?handler=Logout")
-        {
-            Content = new FormUrlEncodedContent(new Dictionary<string, string>()),
-        };
-        request.Headers.Add("RequestVerificationToken", "not-the-token");
+        using var request = AuthTestClient.PostWithHeaderToken(
+            AuthTestClient.LogoutPath, "not-the-token", new FormUrlEncodedContent(new Dictionary<string, string>()));
 
         var response = await client.SendAsync(request);
 
@@ -106,18 +98,6 @@ public class LayoutAntiforgeryTests(WebAppFactory factory) : IClassFixture<WebAp
     private static async Task<string> MetaCsrfTokenAsync(HttpClient client)
     {
         var body = await client.GetStringAsync("/");
-        var meta = CsrfMeta.Match(body);
-        Assert.True(meta.Success, "csrf-token meta tag not found.");
-        return WebUtility.HtmlDecode(meta.Groups[1].Value);
+        return WebUtility.HtmlDecode(HtmlAssert.MetaContent(body, "csrf-token"));
     }
-
-    private static string? PathAndQuery(HttpResponseMessage response) =>
-        response.Headers.Location is { IsAbsoluteUri: true } absolute
-            ? absolute.PathAndQuery
-            : response.Headers.Location?.OriginalString;
-
-    private static bool ClearsAuthCookie(HttpResponseMessage response) =>
-        response.Headers.TryGetValues("Set-Cookie", out var cookies)
-        && cookies.Any(c => Regex.IsMatch(c, @"^factory\.auth=;")
-            && Regex.IsMatch(c, @"expires=Thu, 01 Jan 1970|max-age=0", RegexOptions.IgnoreCase));
 }

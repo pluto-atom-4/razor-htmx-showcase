@@ -25,7 +25,7 @@ public class BoardPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("text/html", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(AuthTestClient.HtmlMediaType, response.Content.Headers.ContentType?.MediaType);
         var pending = body.IndexOf("id=\"column-Pending\"", StringComparison.Ordinal);
         var running = body.IndexOf("id=\"column-Running\"", StringComparison.Ordinal);
         var complete = body.IndexOf("id=\"column-Complete\"", StringComparison.Ordinal);
@@ -40,20 +40,20 @@ public class BoardPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
     {
         var body = await _client.GetStringAsync("/Board");
 
-        var pending = Section(body, "Pending");
+        var pending = HtmlAssert.Section(body, "Pending");
         Assert.Contains("Q2 2026 Production Run", pending);
         Assert.DoesNotContain("Legacy System Migration", pending);
 
-        var running = Section(body, "Running");
+        var running = HtmlAssert.Section(body, "Running");
         Assert.Contains("Legacy System Migration", running);
         Assert.Contains("Testing Phase Build", running);
         Assert.DoesNotContain("Completed Build A", running);
 
-        var complete = Section(body, "Complete");
+        var complete = HtmlAssert.Section(body, "Complete");
         Assert.Contains("Completed Build A", complete);
         Assert.Contains("History Build 1", complete);
 
-        Assert.Contains("Failed Build B", Section(body, "Failed"));
+        Assert.Contains("Failed Build B", HtmlAssert.Section(body, "Failed"));
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public class BoardPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
     {
         var body = await _client.GetStringAsync("/Board");
 
-        var running = Section(body, "Running");
+        var running = HtmlAssert.Section(body, "Running");
         Assert.Contains("id=\"cards-Running\"", running);
         Assert.Contains("id=\"count-Running\"", running);
         Assert.Contains("id=\"card-10000000-0000-0000-0000-000000000002\"", running);
@@ -75,20 +75,6 @@ public class BoardPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
         var response = await anonymous.GetAsync("/Board");
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        Assert.StartsWith("/Login", PathAndQuery(response));
+        Assert.StartsWith(AuthTestClient.LoginPath, HtmlAssert.PathAndQuery(response));
     }
-
-    private static string Section(string body, string status)
-    {
-        var start = body.IndexOf($"id=\"column-{status}\"", StringComparison.Ordinal);
-        Assert.True(start >= 0, $"Column {status} not found.");
-        var end = body.IndexOf("</section>", start, StringComparison.Ordinal);
-        Assert.True(end >= 0, $"Column {status} is not closed.");
-        return body[start..end];
-    }
-
-    private static string? PathAndQuery(HttpResponseMessage response) =>
-        response.Headers.Location is { IsAbsoluteUri: true } absolute
-            ? absolute.PathAndQuery
-            : response.Headers.Location?.OriginalString;
 }

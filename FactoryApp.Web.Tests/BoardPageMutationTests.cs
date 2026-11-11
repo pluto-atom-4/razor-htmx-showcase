@@ -16,7 +16,7 @@ public class BoardPageMutationTests(WebAppFactory factory) : IClassFixture<WebAp
 
         var body = await client.GetStringAsync("/Board");
 
-        var failed = Section(body, "Failed");
+        var failed = HtmlAssert.Section(body, "Failed");
         Assert.Contains("No builds", failed);
         Assert.Contains("class=\"empty\"", failed);
     }
@@ -24,7 +24,7 @@ public class BoardPageMutationTests(WebAppFactory factory) : IClassFixture<WebAp
     [Fact]
     public async Task Build_name_is_html_encoded()
     {
-        await AddPendingBuildAsync("<b>x</b> & y");
+        await BoardDb.AddBuildAsync(factory, BuildStatus.Pending, "<b>x</b> & y");
         using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
 
         var body = await client.GetStringAsync("/Board");
@@ -49,22 +49,5 @@ public class BoardPageMutationTests(WebAppFactory factory) : IClassFixture<WebAp
         await db.TestRuns.Where(t => failedIds.Contains(t.BuildId)).ExecuteDeleteAsync();
         await db.Parts.Where(p => failedIds.Contains(p.BuildId)).ExecuteDeleteAsync();
         await db.Builds.Where(b => failedIds.Contains(b.Id)).ExecuteDeleteAsync();
-    }
-
-    private async Task AddPendingBuildAsync(string name)
-    {
-        using var scope = factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<FactoryDbContext>();
-        db.Builds.Add(new Build { Id = Guid.NewGuid(), Name = name, Status = BuildStatus.Pending });
-        await db.SaveChangesAsync();
-    }
-
-    private static string Section(string body, string status)
-    {
-        var start = body.IndexOf($"id=\"column-{status}\"", StringComparison.Ordinal);
-        Assert.True(start >= 0, $"Column {status} not found.");
-        var end = body.IndexOf("</section>", start, StringComparison.Ordinal);
-        Assert.True(end >= 0, $"Column {status} is not closed.");
-        return body[start..end];
     }
 }

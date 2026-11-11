@@ -8,9 +8,10 @@ public static class AuthTestClient
 {
     public const string AdminEmail = "admin@example.com";
     public const string SeededPassword = "SecurePassword123!";
-
-    private static readonly Regex AntiforgeryInput = new(
-        "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"", RegexOptions.Compiled);
+    public const string LoginPath = "/Login";
+    public const string LogoutPath = "/Login?handler=Logout";
+    public const string ChangeStatusPath = "/Board?handler=ChangeStatus";
+    public const string HtmlMediaType = "text/html";
 
     // Secure cookies are only sent over https, and the auth cookie is Secure outside Development.
     public static HttpClient CreateClient(WebApplicationFactory<Program> factory) =>
@@ -24,7 +25,7 @@ public static class AuthTestClient
     public static async Task<HttpResponseMessage> LoginAsync(
         HttpClient client, string email, string password, string? returnUrl = null)
     {
-        var path = LoginPath(returnUrl);
+        var path = LoginUrl(returnUrl);
         var token = await FetchAntiforgeryTokenAsync(client, path);
 
         var form = new Dictionary<string, string>
@@ -49,14 +50,28 @@ public static class AuthTestClient
         return client;
     }
 
-    public static async Task<string> FetchAntiforgeryTokenAsync(HttpClient client, string path = "/Login")
+    public static async Task<string> FetchAntiforgeryTokenAsync(HttpClient client, string path = LoginPath)
     {
         var html = await client.GetStringAsync(path);
-        var match = AntiforgeryInput.Match(html);
-        Assert.True(match.Success, "Antiforgery token input not found on the page.");
-        return WebUtility.HtmlDecode(match.Groups[1].Value);
+        return WebUtility.HtmlDecode(HtmlAssert.InputValue(html, "__RequestVerificationToken"));
     }
 
-    private static string LoginPath(string? returnUrl) =>
-        returnUrl is null ? "/Login" : $"/Login?ReturnUrl={Uri.EscapeDataString(returnUrl)}";
+    public static HttpRequestMessage PostWithHeaderToken(string path, string token, HttpContent content)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = content };
+        request.Headers.Add("RequestVerificationToken", token);
+        return request;
+    }
+
+    public static bool SetsAuthCookie(HttpResponseMessage response) =>
+        response.Headers.TryGetValues("Set-Cookie", out var cookies)
+        && cookies.Any(c => Regex.IsMatch(c, @"^factory\.auth=[^;]+"));
+
+    public static bool ClearsAuthCookie(HttpResponseMessage response) =>
+        response.Headers.TryGetValues("Set-Cookie", out var cookies)
+        && cookies.Any(c => Regex.IsMatch(c, @"^factory\.auth=;")
+            && Regex.IsMatch(c, @"expires=Thu, 01 Jan 1970|max-age=0", RegexOptions.IgnoreCase));
+
+    private static string LoginUrl(string? returnUrl) =>
+        returnUrl is null ? LoginPath : $"{LoginPath}?ReturnUrl={Uri.EscapeDataString(returnUrl)}";
 }
