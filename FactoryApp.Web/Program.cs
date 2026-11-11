@@ -1,4 +1,5 @@
 using FactoryApp.Domain;
+using FactoryApp.Domain.TestFixtures;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -29,6 +30,14 @@ builder.Services.AddAuthorizationBuilder()
 builder.Services.AddAntiforgery(o => o.HeaderName = "RequestVerificationToken");
 
 var app = builder.Build();
+// Opt-in: WebApplicationFactory also runs in Development, so tests must not seed by default.
+if (app.Environment.IsDevelopment() && app.Configuration["FACTORY_DEV_SEED"] == "true")
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<FactoryDbContext>();
+    await db.Database.MigrateAsync();
+    await FixtureSeeder.SeedAllAsync(db, app.Environment.IsDevelopment());
+}
 app.UseStaticFiles();
 
 app.UseAuthentication();
