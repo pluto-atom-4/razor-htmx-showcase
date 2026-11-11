@@ -1,0 +1,5 @@
+# Hook and helper scripts run under bash; CRLF breaks parsing, and a bash syntax error exits 2,
+# which a Claude Code PreToolUse hook treats as "block" (see .claude/hooks/protect-files.sh).
+*.sh text eol=lf
+# .env is copied from this file and sourced by bash; a CR ends up inside values (for example MSSQL_PORT=1433\r).
+.env.example text eol=lf
