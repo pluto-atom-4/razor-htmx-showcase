@@ -82,7 +82,7 @@ docker compose down
 
 ### Troubleshooting: line endings
 
-If git converts line endings on checkout (`git config core.autocrlf` is `true`, common on Windows and WSL setups), a fresh clone has CRLF in `.env.example` and `scripts/apply-migrations.sh`. Then `.env` gets CRLF too, and:
+`.gitattributes` forces LF for `.env.example` and `*.sh`, so a fresh clone is fine even when `git config core.autocrlf` is `true` (common on Windows and WSL setups). A clone made before that file existed can have CRLF in those files, and then `.env` gets CRLF too:
 
 - after `set -a; . ./.env; set +a`, `docker compose` fails with `invalid hostPort: 1433`;
 - `./scripts/apply-migrations.sh` fails with `set: pipefail: invalid option name`.
@@ -92,8 +92,6 @@ Fix, then run the step again:
 ```bash
 sed -i 's/\r$//' .env scripts/apply-migrations.sh
 ```
-
-To avoid it for a new clone, run `git config core.autocrlf input` before cloning (or set it globally).
 
 ## Tests
 
