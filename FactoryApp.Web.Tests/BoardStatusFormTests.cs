@@ -122,7 +122,21 @@ public class BoardStatusFormTests(WebAppFactory factory) : IClassFixture<WebAppF
         var body = await client.GetStringAsync("/app.js");
 
         Assert.Contains("responseHandling", body);
-        Assert.Contains("\"422\"", body);
+        var swap422 = body.IndexOf("{code:\"422\",swap:true", StringComparison.Ordinal);
+        var generic4xx = body.IndexOf("{code:\"[45]..\"", StringComparison.Ordinal);
+        Assert.True(swap422 >= 0 && swap422 < generic4xx, "The 422 entry must come before the generic 4xx entry.");
+    }
+
+    [Fact]
+    public async Task App_script_leaves_the_page_when_a_response_lands_on_the_login_page()
+    {
+        using var client = AuthTestClient.CreateClient(factory);
+
+        var body = await client.GetStringAsync("/app.js");
+
+        Assert.Contains("htmx:beforeSwap", body);
+        Assert.Contains("'/Login'", body);
+        Assert.Contains("htmx:responseError", body);
     }
 
     private async Task<Guid> AddBuildAsync(BuildStatus status)

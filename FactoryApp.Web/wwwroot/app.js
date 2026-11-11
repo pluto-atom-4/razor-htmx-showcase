@@ -8,3 +8,18 @@ document.body.addEventListener('htmx:configRequest', function (event) {
     if (new URL(event.detail.path, location.href).origin !== location.origin) return;
     event.detail.headers['RequestVerificationToken'] = meta.content;
 });
+
+// An expired session makes the browser follow the login redirect inside the XHR; swapping that page into a card would be wrong.
+document.body.addEventListener('htmx:beforeSwap', function (event) {
+    var finalUrl = event.detail.xhr && event.detail.xhr.responseURL;
+    if (finalUrl && new URL(finalUrl, location.href).pathname === '/Login') {
+        event.detail.shouldSwap = false;
+        window.location.href = finalUrl;
+    }
+});
+
+document.body.addEventListener('htmx:responseError', function (event) {
+    if (event.detail.target) {
+        event.detail.target.textContent = 'The request failed. Reload the page and try again.';
+    }
+});
