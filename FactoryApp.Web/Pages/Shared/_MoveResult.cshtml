@@ -1,0 +1,8 @@
+@model BoardModel.MoveResult
+@using Microsoft.AspNetCore.Mvc.ViewFeatures
+@{
+    var outOfBand = new ViewDataDictionary(ViewData) { ["Oob"] = true };
+}
+
+<partial name="_Column" model="Model.Old" view-data="outOfBand" />
+<partial name="_Column" model="Model.New" view-data="outOfBand" />
