@@ -37,3 +37,52 @@ td {
 td:last-child {
   font-weight: 600;
 }
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.column {
+  min-width: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.column h2 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.count {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.card {
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.375rem;
+  overflow-wrap: anywhere;
+}
+
+.card h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.25rem;
+}
+
+.card time,
+.empty {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.empty {
+  margin: 0;
+}
