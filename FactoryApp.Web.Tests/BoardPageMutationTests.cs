@@ -63,7 +63,8 @@ public class BoardPageMutationTests(WebAppFactory factory) : IClassFixture<WebAp
     {
         var start = body.IndexOf($"id=\"column-{status}\"", StringComparison.Ordinal);
         Assert.True(start >= 0, $"Column {status} not found.");
-        var next = body.IndexOf("id=\"column-", start + 1, StringComparison.Ordinal);
-        return next < 0 ? body[start..] : body[start..next];
+        var end = body.IndexOf("</section>", start, StringComparison.Ordinal);
+        Assert.True(end >= 0, $"Column {status} is not closed.");
+        return body[start..end];
     }
 }

@@ -16,6 +16,7 @@ public class BoardModel(FactoryDbContext db) : PageModel
             .AsNoTracking()
             .OrderByDescending(b => b.UpdatedAt)
             .ThenBy(b => b.Name)
+            .ThenBy(b => b.Id)
             .Take(200)
             .Select(b => new BoardCard(b.Id, b.Name, b.Status, b.UpdatedAt))
             .ToListAsync(ct);

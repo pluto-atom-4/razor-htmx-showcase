@@ -1,7 +1,7 @@
 @model BoardModel.BoardColumn
 
 <section id="column-@Model.Status" class="column">
-    <h2>@Model.Status <span class="count">@Model.Cards.Count</span></h2>
+    <h2>@Model.Status <span id="count-@Model.Status" class="count">@Model.Cards.Count</span></h2>
     <div id="cards-@Model.Status" class="cards">
         @foreach (var card in Model.Cards)
         {
@@ -12,7 +12,7 @@
         }
         @if (Model.Cards.Count == 0)
         {
-            <p class="empty">No builds</p>
+            <p id="empty-@Model.Status" class="empty">No builds</p>
         }
     </div>
 </section>

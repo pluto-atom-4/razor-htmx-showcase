@@ -61,8 +61,10 @@ public class BoardPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
     {
         var body = await _client.GetStringAsync("/Board");
 
-        Assert.Contains("id=\"cards-Running\"", body);
-        Assert.Contains("id=\"card-10000000-0000-0000-0000-000000000002\"", body);
+        var running = Section(body, "Running");
+        Assert.Contains("id=\"cards-Running\"", running);
+        Assert.Contains("id=\"count-Running\"", running);
+        Assert.Contains("id=\"card-10000000-0000-0000-0000-000000000002\"", running);
     }
 
     [Fact]
@@ -80,8 +82,9 @@ public class BoardPageTests(WebAppFactory factory) : IClassFixture<WebAppFactory
     {
         var start = body.IndexOf($"id=\"column-{status}\"", StringComparison.Ordinal);
         Assert.True(start >= 0, $"Column {status} not found.");
-        var next = body.IndexOf("id=\"column-", start + 1, StringComparison.Ordinal);
-        return next < 0 ? body[start..] : body[start..next];
+        var end = body.IndexOf("</section>", start, StringComparison.Ordinal);
+        Assert.True(end >= 0, $"Column {status} is not closed.");
+        return body[start..end];
     }
 
     private static string? PathAndQuery(HttpResponseMessage response) =>
