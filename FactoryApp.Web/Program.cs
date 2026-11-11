@@ -25,6 +25,20 @@ builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.Cookies.C
         options.AccessDeniedPath = "/Login";
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
+        options.Events.OnRedirectToLogin = static context =>
+        {
+            if (context.Request.Headers.ContainsKey("HX-Request"))
+            {
+                // A 302 would be followed inside the htmx XHR and the login page swapped in; HX-Redirect navigates instead.
+                var uri = new Uri(context.RedirectUri, UriKind.RelativeOrAbsolute);
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.Headers["HX-Redirect"] = uri.IsAbsoluteUri ? uri.PathAndQuery : uri.OriginalString;
+                return Task.CompletedTask;
+            }
+
+            context.Response.Redirect(context.RedirectUri);
+            return Task.CompletedTask;
+        };
     });
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
