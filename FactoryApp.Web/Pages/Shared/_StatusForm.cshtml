@@ -1,0 +1,23 @@
+@model BoardModel.BoardCard
+@using FactoryApp.Domain
+@{
+    var targets = Enum.GetValues<BuildStatus>().Where(s => Transitions.IsAllowed(Model.Status, s)).ToList();
+}
+@if (targets.Count > 0)
+{
+    <form id="form-@Model.Id" method="post" asp-page="/Board" asp-page-handler="ChangeStatus"
+          hx-post="@Url.Page("/Board", "ChangeStatus")" hx-target="#card-error-@Model.Id" hx-swap="innerHTML" hx-disabled-elt="find button">
+        <input type="hidden" name="BuildId" value="@Model.Id" />
+        <label for="station-@Model.Id">Station</label>
+        <select id="station-@Model.Id" name="Station">
+            @foreach (var station in BoardModel.Stations)
+            {
+                <option value="@station">@station</option>
+            }
+        </select>
+        @foreach (var target in targets)
+        {
+            <button type="submit" name="NewStatus" value="@target" aria-label="@target: @Model.Name">@target</button>
+        }
+    </form>
+}

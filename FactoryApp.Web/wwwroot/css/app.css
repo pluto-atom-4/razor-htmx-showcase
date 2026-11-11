@@ -86,3 +86,17 @@ td:last-child {
 .empty {
   margin: 0;
 }
+
+.card form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.card-error,
+.error {
+  color: #b91c1c;
+  font-size: 0.875rem;
+}

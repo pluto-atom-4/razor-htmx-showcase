@@ -1,0 +1,7 @@
+@model BoardModel.BoardCard
+<article id="card-@Model.Id" class="card">
+    <h3>@Model.Name</h3>
+    <time>@Model.UpdatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture)</time>
+    <partial name="_StatusForm" model="Model" />
+    <div id="card-error-@Model.Id" class="card-error"></div>
+</article>
