@@ -25,6 +25,39 @@ builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.Cookies.C
         options.AccessDeniedPath = "/Login";
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
+        options.Events.OnRedirectToLogin = static context =>
+        {
+            var headers = context.Request.Headers;
+            if (headers.ContainsKey("HX-Request"))
+            {
+                // A 302 would be followed inside the htmx XHR and the login page swapped in; HX-Redirect navigates instead.
+                var login = new Uri(context.RedirectUri, UriKind.RelativeOrAbsolute);
+                var target = login.IsAbsoluteUri ? login.PathAndQuery : login.OriginalString;
+                // Return to the page the user was on, not to the POST URL; only a same-host current URL is trusted.
+                if (Uri.TryCreate(headers["HX-Current-URL"].ToString(), UriKind.Absolute, out var current)
+                    && string.Equals(current.Host, context.Request.Host.Host, StringComparison.OrdinalIgnoreCase))
+                {
+                    target = $"{context.Options.LoginPath}?{context.Options.ReturnUrlParameter}={Uri.EscapeDataString(current.PathAndQuery)}";
+                }
+
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.Headers["HX-Redirect"] = target.StartsWith("//", StringComparison.Ordinal)
+                    ? context.Options.LoginPath.Value
+                    : target;
+                return Task.CompletedTask;
+            }
+
+            if (string.Equals(headers["X-Requested-With"], "XMLHttpRequest", StringComparison.OrdinalIgnoreCase))
+            {
+                // Keep the framework default for plain XHR clients: 401 with the login URL in Location.
+                context.Response.Headers.Location = context.RedirectUri;
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return Task.CompletedTask;
+            }
+
+            context.Response.Redirect(context.RedirectUri);
+            return Task.CompletedTask;
+        };
     });
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
