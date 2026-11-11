@@ -14,21 +14,15 @@ public class BoardModel(FactoryDbContext db, BuildService builds) : PageModel
 
     public IReadOnlyList<BoardColumn> Columns { get; private set; } = [];
 
-    // The 200 cap applies to all columns together, so a busy column can crowd out another.
     public async Task OnGetAsync(CancellationToken ct)
     {
-        var cards = await db.Builds
-            .AsNoTracking()
-            .OrderByDescending(b => b.UpdatedAt)
-            .ThenBy(b => b.Name)
-            .ThenBy(b => b.Id)
-            .Take(200)
-            .Select(b => new BoardCard(b.Id, b.Name, b.Status, b.UpdatedAt))
-            .ToListAsync(ct);
+        var columns = new List<BoardColumn>();
+        foreach (var status in Enum.GetValues<BuildStatus>())
+        {
+            columns.Add(await LoadColumnAsync(status, ct));
+        }
 
-        Columns = Enum.GetValues<BuildStatus>()
-            .Select(status => new BoardColumn(status, cards.Where(c => c.Status == status).ToList()))
-            .ToList();
+        Columns = columns;
     }
 
     public async Task<IActionResult> OnPostChangeStatusAsync([FromForm] ChangeStatusInput input, CancellationToken ct)
@@ -57,12 +51,13 @@ public class BoardModel(FactoryDbContext db, BuildService builds) : PageModel
             return UnprocessableFragment(result.Error ?? "Invalid request.");
         }
 
-        // Publishing the status event is S2-03's job and must happen after commit, not here.
+        // Do not publish result.Event here; publishing must happen after commit.
         var oldColumn = await LoadColumnAsync(result.Event!.OldStatus, ct);
         var newColumn = await LoadColumnAsync(input.NewStatus, ct);
         return Partial("_MoveResult", new MoveResult(oldColumn, newColumn));
     }
 
+    // Each column is capped at 200 cards on its own, so the page and a move response agree.
     private async Task<BoardColumn> LoadColumnAsync(BuildStatus status, CancellationToken ct)
     {
         var cards = await db.Builds

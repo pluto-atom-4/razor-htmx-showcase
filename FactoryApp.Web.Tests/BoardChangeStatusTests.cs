@@ -72,17 +72,21 @@ public class BoardChangeStatusTests(WebAppFactory factory) : IClassFixture<WebAp
         Assert.Empty(await HistoryAsync(buildId));
     }
 
-    [Fact]
-    public async Task Undefined_status_returns_422_and_writes_nothing()
+    [Theory]
+    [InlineData("99")]
+    [InlineData("3,1")]
+    [InlineData("not-a-status")]
+    [InlineData("")]
+    public async Task Undefined_or_malformed_status_returns_422_and_writes_nothing(string status)
     {
         var buildId = await AddBuildAsync(BuildStatus.Pending);
         using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
         var token = await AuthTestClient.FetchAntiforgeryTokenAsync(client, "/Board");
 
-        using var response = await client.PostAsync(ChangeStatusPath, Form(token, buildId, "99", Station));
+        using var response = await client.PostAsync(ChangeStatusPath, Form(token, buildId, status, Station));
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
-        Assert.Contains("Invalid request.", await response.Content.ReadAsStringAsync());
+        Assert.Contains("class=\"error\"", await response.Content.ReadAsStringAsync());
         Assert.Equal(BuildStatus.Pending, await StatusOfAsync(buildId));
         Assert.Empty(await HistoryAsync(buildId));
     }
