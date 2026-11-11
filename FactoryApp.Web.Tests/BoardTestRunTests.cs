@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using FactoryApp.Domain;
 using FactoryApp.Domain.Entities;
 using FactoryApp.Web.Pages;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace FactoryApp.Web.Tests;
@@ -66,8 +67,8 @@ public class BoardTestRunTests(WebAppFactory factory) : IClassFixture<WebAppFact
     }
 
     [Theory]
-    [InlineData("Failed", null, "required")]
-    [InlineData("Failed", "", "required")]
+    [InlineData("Failed", null, "Failure code is required for a failed test run.")]
+    [InlineData("Failed", "", "Failure code is required for a failed test run.")]
     [InlineData("Failed", "BOGUS", "Unknown failure code.")]
     [InlineData("Passed", "LEAK", "Failure code is only allowed")]
     public async Task Invalid_failure_code_returns_422_and_writes_nothing(string result, string? code, string message)
@@ -89,7 +90,9 @@ public class BoardTestRunTests(WebAppFactory factory) : IClassFixture<WebAppFact
     [Theory]
     [InlineData("NOPE-9")]
     [InlineData("")]
-    public async Task Unknown_station_returns_422_and_writes_nothing(string station)
+    [InlineData("   ")]
+    [InlineData(null)]
+    public async Task Unknown_station_returns_422_and_writes_nothing(string? station)
     {
         var buildId = await BoardDb.AddBuildAsync(factory, BuildStatus.Running);
         using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
@@ -220,12 +223,25 @@ public class BoardTestRunTests(WebAppFactory factory) : IClassFixture<WebAppFact
     }
 
     [Fact]
-    public async Task Newest_test_run_is_the_one_shown()
+    public async Task Running_build_with_no_test_runs_shows_no_last_test_line()
     {
         var buildId = await BoardDb.AddBuildAsync(factory, BuildStatus.Running);
-        await AddTestRunAsync(buildId, TestStatus.Failed, "Failed: LEAK", FailureCodes.Leak,
+        using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
+
+        var card = CardFor(await client.GetStringAsync("/Board"), buildId);
+
+        Assert.DoesNotContain("Last test:", card);
+    }
+
+    [Fact]
+    public async Task Newest_test_run_is_the_one_shown_even_when_its_id_sorts_lower()
+    {
+        var buildId = await BoardDb.AddBuildAsync(factory, BuildStatus.Running);
+        var newestId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var oldestId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+        await AddTestRunAsync(buildId, newestId, TestStatus.Failed, "Failed: LEAK", FailureCodes.Leak,
             new DateTime(2026, 11, 10, 12, 0, 0, DateTimeKind.Utc));
-        await AddTestRunAsync(buildId, TestStatus.Passed, "Passed", null,
+        await AddTestRunAsync(buildId, oldestId, TestStatus.Passed, "Passed", null,
             new DateTime(2026, 11, 10, 9, 0, 0, DateTimeKind.Utc));
         using var client = await AuthTestClient.CreateAuthenticatedClientAsync(factory);
 
@@ -235,6 +251,26 @@ public class BoardTestRunTests(WebAppFactory factory) : IClassFixture<WebAppFact
         Assert.DoesNotContain("Last test: Passed", card);
     }
 
+    [Fact]
+    public async Task Anonymous_htmx_post_gets_401_with_hx_redirect_to_login_and_writes_nothing()
+    {
+        var buildId = await BoardDb.AddBuildAsync(factory, BuildStatus.Running);
+        using var client = AuthTestClient.CreateClient(factory);
+        using var request = new HttpRequestMessage(HttpMethod.Post, AuthTestClient.SubmitTestRunPath)
+        {
+            Content = BoardDb.SubmitTestRunForm(null, buildId, "Passed", Station, null),
+        };
+        request.Headers.Add("HX-Request", "true");
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.True(response.Headers.TryGetValues("HX-Redirect", out var values), "HX-Redirect header missing.");
+        Assert.StartsWith($"{AuthTestClient.LoginPath}?ReturnUrl=", Assert.Single(values));
+        Assert.Null(response.Headers.Location);
+        await AssertNothingWrittenAsync(buildId, BuildStatus.Running);
+    }
+
     private async Task AssertNothingWrittenAsync(Guid buildId, BuildStatus expectedStatus)
     {
         Assert.Equal(expectedStatus, await BoardDb.StatusOfAsync(factory, buildId));
@@ -242,13 +278,15 @@ public class BoardTestRunTests(WebAppFactory factory) : IClassFixture<WebAppFact
         Assert.Empty(await BoardDb.HistoryAsync(factory, buildId));
     }
 
-    private async Task AddTestRunAsync(Guid buildId, TestStatus status, string result, string? code, DateTime createdAt)
+    private async Task AddTestRunAsync(
+        Guid buildId, Guid id, TestStatus status, string result, string? code, DateTime createdAt)
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<FactoryDbContext>();
+        await db.TestRuns.Where(t => t.Id == id).ExecuteDeleteAsync();
         db.TestRuns.Add(new TestRun
         {
-            Id = Guid.NewGuid(),
+            Id = id,
             BuildId = buildId,
             Status = status,
             Result = result,
