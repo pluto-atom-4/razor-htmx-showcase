@@ -11,6 +11,7 @@
 <body>
     <header>
         <strong>FactoryApp</strong>
+        <a asp-page="/Board">Board</a>
         @if (User.Identity?.IsAuthenticated == true)
         {
             <form method="post" asp-page="/Login" asp-page-handler="Logout">

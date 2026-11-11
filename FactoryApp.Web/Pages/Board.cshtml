@@ -1,0 +1,14 @@
+@page
+@model BoardModel
+@{
+    ViewData["Title"] = "Board";
+}
+
+<h1>Board</h1>
+
+<div class="board">
+    @foreach (var column in Model.Columns)
+    {
+        <partial name="_Column" model="column" />
+    }
+</div>
