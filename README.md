@@ -134,3 +134,7 @@ This is a manufacturing execution slice, not a full MES. The planned end state i
 ## Workflow
 
 The project is built with an architect, builder and reviewer agent loop. The owner merges every PR. The agent rules are in [`.claude/rules/cavecrew-rules.md`](.claude/rules/cavecrew-rules.md).
+
+## License
+
+[MIT](LICENSE). The vendored htmx files in `FactoryApp.Web/wwwroot/lib/htmx/` keep their own licenses (packages and versions in `VERSIONS.md`).
