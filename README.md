@@ -24,7 +24,7 @@ Plan: [discussion 1](https://github.com/pluto-atom-4/razor-htmx-showcase/discuss
 
 - .NET SDK 10.0.301 (`global.json`; later patches roll forward).
 - Docker. It runs SQL Server 2022 for local use, and the tests start their own SQL Server containers through Testcontainers.
-- `dotnet-ef` 10.0.x, only for `scripts/apply-migrations.sh`: `dotnet tool install -g dotnet-ef --version 10.0.9` (the version CI uses).
+- `dotnet-ef` 10.0.x, only for `scripts/apply-migrations.sh`: `dotnet tool update -g dotnet-ef --version "10.0.*"`. CI installs the same version as `Microsoft.EntityFrameworkCore.Tools` in `FactoryApp.Domain/FactoryApp.Domain.csproj`.
 
 ## Run it
 
@@ -133,8 +133,7 @@ This is a manufacturing execution slice, not a full MES. The planned end state i
 
 ## Workflow
 
-The project is built with an architect, builder and reviewer agent loop. The owner merges every PR. The agent rules are in [`.claude/rules/cavecrew-rules.md`](.claude/rules/cavecrew-rules.md).
-
+The project is built with an architect, builder and reviewer agent loop. The owner merges every PR.
 ## License
 
 [MIT](LICENSE). The vendored htmx files in `FactoryApp.Web/wwwroot/lib/htmx/` keep their own licenses (packages and versions in `VERSIONS.md`).
