@@ -7,6 +7,11 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # Push runs get a unique group, so only superseded pull request runs are cancelled.
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,16 +23,42 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The parent commit is needed to diff the pull request merge commit.
+          fetch-depth: 2
           persist-credentials: false
+      - name: Detect production changes
+        id: changes
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          non_production='(\.md$|^LICENSE$|^\.gitignore$|^\.gitattributes$|^\.mcp\.json$|^\.claude/|^scripts/|^\.github/dependabot\.yml$)'
+          code=true
+          if [ "$EVENT" = pull_request ]; then
+            # --no-renames lists the old path, so code renamed to .md still counts.
+            files=$(git diff --name-only --no-renames HEAD^1 HEAD)
+            # grep exit 1 means no production file; any higher code fails the step.
+            production=$(grep -vE "$non_production" <<<"$files" || [ $? = 1 ])
+            if [ -n "$files" ] && [ -z "$production" ]; then code=false; fi
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "Production changes: $code"
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        if: steps.changes.outputs.code == 'true'
         with:
           global-json-file: global.json
       - run: dotnet build --nologo -c Release
+        if: steps.changes.outputs.code == 'true'
       - run: dotnet test --nologo -c Release --no-build
+        if: steps.changes.outputs.code == 'true'
       # Tool version comes from the csproj so Dependabot package bumps carry it.
-      - run: |
+      - if: steps.changes.outputs.code == 'true'
+        run: |
           version=$(grep -oP 'Include="Microsoft\.EntityFrameworkCore\.Tools" Version="\K[^"]+' FactoryApp.Domain/FactoryApp.Domain.csproj)
           dotnet tool install --global dotnet-ef --version "$version"
       # SQL Server comes from docker-compose.yml so the image digest has one source.
       - run: docker compose up -d --wait --wait-timeout 180 sql-server
+        if: steps.changes.outputs.code == 'true'
       - run: dotnet ef database update --project FactoryApp.Domain
+        if: steps.changes.outputs.code == 'true'
