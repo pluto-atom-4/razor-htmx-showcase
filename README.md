@@ -149,6 +149,42 @@ Prerequisites:
 - `gh`, used by the `gate-enforcer` agent to read CI results.
 - The `issue-build-review-loop` skill, the `caveman` plugin and user-level comment rules. They are not part of this repository.
 
+#### Pre-commit check (optional)
+
+`scripts/check-ai-config.sh` checks staged changes to `.claude/` and `.mcp.json` before a commit:
+
+- `.claude/settings.json` and `.mcp.json` are valid JSON;
+- `.claude/hooks/*.sh` pass `bash -n` and have LF line endings;
+- `.claude/settings.local.json` is not staged;
+- no recognised token pattern, user home path or email address is staged. `example.com`, `.org`, `.net` and some no-reply addresses are allowed.
+
+It needs `bash`, `git` and `jq`. It is a local convenience: it is not a CI check or a security boundary, `git commit --no-verify` skips it, and it does not run until you install it. The pattern list is not complete.
+
+First see whether `core.hooksPath` is set:
+
+```bash
+git config --show-origin --get core.hooksPath
+```
+
+- **No output:** install once, from the main checkout. Linked worktrees use the same hook.
+- **A global hooks directory is set:** Git ignores `.git/hooks` unless your global `pre-commit` calls the repository hook. If it calls `$(git rev-parse --git-common-dir)/hooks/pre-commit`, install once, from the main checkout. If it calls `$(git rev-parse --git-dir)/hooks/pre-commit`, each linked worktree has its own Git directory, so also run the install block inside every worktree. If your global hook does not call a repository hook, this check does not run; adjust that hook first. Do not install into the global directory.
+- **A repository-level path is set** (for example by Husky): add `bash scripts/check-ai-config.sh || exit 1` to the `pre-commit` hook in that directory instead of running the install block.
+
+Install, from the repository root:
+
+```bash
+h="$(git rev-parse --git-dir)/hooks/pre-commit"
+if [ -e "$h" ]; then
+  echo "$h already exists: add 'bash scripts/check-ai-config.sh || exit 1' to it, before any exit or exec line"
+else
+  mkdir -p "${h%/*}" &&
+  printf '%s\n' '#!/bin/sh' 'if [ -f scripts/check-ai-config.sh ]; then exec bash scripts/check-ai-config.sh; fi' > "$h" &&
+  chmod +x "$h"
+fi
+```
+
+The hook runs the script from your checked-out branch, so read changes to it before you commit on a branch or fork that modifies it. On a branch without the script, the hook does nothing. To uninstall, delete the hook file.
+
 ## License
 
 [MIT](LICENSE). The vendored htmx files in `FactoryApp.Web/wwwroot/lib/htmx/` keep their own licenses (packages and versions in `VERSIONS.md`).
