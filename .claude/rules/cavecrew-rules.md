@@ -1,6 +1,6 @@
 # Cavecrew rules
 
-Text rules for the repo agents. A `SubagentStart` hook in `.claude/settings.json` is configured to inject this file into `repo-cavecrew-builder`, `slop-hunter`, `caveman:cavecrew-builder` and `caveman:cavecrew-reviewer` (injection not verified, see Honesty). `architect`, `investigator` and `gate-enforcer` are not covered by the hook; each agent file should tell its agent to read this file. A rule is enforced only where a hook or permission enforces it.
+Text rules for the repo agents. A `SubagentStart` hook in `.claude/settings.json` is configured to inject this file into `repo-cavecrew-builder`, `slop-hunter`, `caveman:cavecrew-builder` and `caveman:cavecrew-reviewer` (see Honesty). `architect`, `investigator` and `gate-enforcer` are not covered by the hook; each agent file should tell its agent to read this file. A rule is enforced only where a hook or permission enforces it.
 
 ## Agents
 
@@ -63,4 +63,4 @@ Applies to review output; the plugin `caveman:cavecrew-reviewer` keeps its own f
 - Tool lists in agent files express intent. Whether Claude Code enforces them for subagents is unverified.
 - The hooks were dry-run from the shell. The guard is not a security boundary.
 - Guard check, 2026-11-28: a requested write of a file named `.mcp.json` was refused in the main session and in a subagent.
-- Not verified: that the `SubagentStart` hook adds this file for `repo-cavecrew-builder`.
+- Hook check, 2026-11-28: session logs show this file attached as `SubagentStart` hook context in every logged `repo-cavecrew-builder` run, and in runs of the other three matched agents (not every reviewer run). An agent's own report about its context is not reliable evidence.

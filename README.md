@@ -112,7 +112,7 @@ Rules that matter:
 
 - No GraphQL, Elsa, Dapper or Redis.
 - htmx stays on 2.x. htmx 4 changes SSE handling.
-- Secrets live only in `.env`. `.env.example` is committed with placeholders only.
+- In repository files, secrets live only in `.env` (git-ignored). `.env.example` is committed with placeholders only. Test-only passwords also appear in tracked files: one for the throwaway CI database in `.github/workflows/ci.yml`, and one in the development seed and the tests.
 - Events are published after commit. `BuildService` creates the status-changed event after the transaction commits and returns it; nothing sends it to clients yet. Publishing it is part of the planned SSE work.
 
 ## MES coverage
@@ -133,7 +133,21 @@ This is a manufacturing execution slice, not a full MES. The planned end state i
 
 ## Workflow
 
-The project is built with an architect, builder and reviewer agent loop. The owner merges every PR.
+The project is built with an architect, builder and reviewer agent loop. The owner merges every PR. Shared agent rules are in [the rules file](.claude/rules/cavecrew-rules.md).
+
+### Claude Code configuration (optional)
+
+`.claude/` and `.mcp.json` hold the shared Claude Code configuration. Building, running and testing the app do not need it.
+
+These files start commands on your machine. Before you run Claude Code on a branch or fork that changes them, read the changes. The file guard hook is a convenience, not a security boundary.
+
+Prerequisites:
+
+- `bash`, `jq` and `git`.
+- `code-review-graph`, `graphify` and `graphify-mcp`, installed separately. `graphify-mcp` reads `graphify-out/graph.json`, which you build locally and which is git-ignored.
+- `GITHUB_MCP_PAT`: set it in your shell environment, outside this repository, as a fine-grained personal access token limited to this repository, with only the permissions you need (the architect agent reads and writes issues). Never write its value into a file in the repository.
+- `gh`, used by the `gate-enforcer` agent to read CI results.
+- The `issue-build-review-loop` skill, the `caveman` plugin and user-level comment rules. They are not part of this repository.
 
 ## License
 
