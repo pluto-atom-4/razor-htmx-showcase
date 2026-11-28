@@ -33,5 +33,8 @@ jobs:
           global-json-file: global.json
       - run: dotnet build --nologo -c Release
       - run: dotnet test --nologo -c Release --no-build
-      - run: dotnet tool install --global dotnet-ef --version 10.0.9
+      # Tool version comes from the csproj so Dependabot package bumps carry it.
+      - run: |
+          version=$(grep -oP 'Include="Microsoft\.EntityFrameworkCore\.Tools" Version="\K[^"]+' FactoryApp.Domain/FactoryApp.Domain.csproj)
+          dotnet tool install --global dotnet-ef --version "$version"
       - run: dotnet ef database update --project FactoryApp.Domain
