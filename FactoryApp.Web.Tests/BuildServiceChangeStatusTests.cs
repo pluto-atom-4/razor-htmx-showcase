@@ -10,7 +10,7 @@ namespace FactoryApp.Web.Tests;
 
 public sealed class SqlFixture : IAsyncLifetime
 {
-    private readonly MsSqlContainer _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
+    private readonly MsSqlContainer _container = new MsSqlBuilder(SqlServerImage.Reference).Build();
 
     public string ConnectionString => _container.GetConnectionString();
 

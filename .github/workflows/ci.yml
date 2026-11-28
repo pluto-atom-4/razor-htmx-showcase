@@ -11,18 +11,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      sql:
-        image: mcr.microsoft.com/mssql/server:2022-latest
-        env:
-          ACCEPT_EULA: Y
-          MSSQL_PID: Developer
-          MSSQL_SA_PASSWORD: Ci_Passw0rd!x9
-        ports: ["1433:1433"]
-        options: >-
-          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P Ci_Passw0rd!x9 -Q 'SELECT 1'"
-          --health-interval 10s --health-timeout 5s --health-retries 12
     env:
+      # Throwaway CI database only (accepted in #56).
+      MSSQL_SA_PASSWORD: Ci_Passw0rd!x9
       FACTORY_CONNECTION: Server=localhost,1433;Database=FactoryApp;User Id=sa;Password=Ci_Passw0rd!x9;TrustServerCertificate=True
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,4 +28,6 @@ jobs:
       - run: |
           version=$(grep -oP 'Include="Microsoft\.EntityFrameworkCore\.Tools" Version="\K[^"]+' FactoryApp.Domain/FactoryApp.Domain.csproj)
           dotnet tool install --global dotnet-ef --version "$version"
+      # SQL Server comes from docker-compose.yml so the image digest has one source.
+      - run: docker compose up -d --wait --wait-timeout 180 sql-server
       - run: dotnet ef database update --project FactoryApp.Domain

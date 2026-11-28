@@ -13,8 +13,7 @@ public class StationOperatorFailureCodeMigrationTests : IAsyncLifetime
 {
     private const string PreviousMigration = "20260709234406_AddBuildWorkflowRelationship";
 
-    private readonly MsSqlContainer _container = new MsSqlBuilder()
-        .WithImage("mcr.microsoft.com/mssql/server:2022-latest")
+    private readonly MsSqlContainer _container = new MsSqlBuilder(SqlServerImage.Reference)
         .Build();
 
     public Task InitializeAsync() => _container.StartAsync();
