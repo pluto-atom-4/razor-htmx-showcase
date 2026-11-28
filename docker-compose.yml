@@ -1,6 +1,7 @@
 services:
   sql-server:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    # Refresh the digest by hand: docker buildx imagetools inspect mcr.microsoft.com/mssql/server:2022-latest
+    image: mcr.microsoft.com/mssql/server:2022-latest@sha256:4525e3efac9f3e241cb003bb2ff2a82818b502f37e12049d788b1a9fa7e13b7f
     container_name: razor-htmx-sql-server
     environment:
       ACCEPT_EULA: "Y"
@@ -10,6 +11,11 @@ services:
       - "${MSSQL_PORT:-1433}:1433"
     volumes:
       - sql-server-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
 volumes:
   sql-server-data:
