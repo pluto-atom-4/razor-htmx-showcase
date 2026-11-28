@@ -62,8 +62,7 @@ public class DevSeedTests
 
     private sealed class DevSeedFactory(string environment, string? flag) : WebApplicationFactory<Program>, IAsyncLifetime
     {
-        private readonly MsSqlContainer _container = new MsSqlBuilder()
-            .WithImage("mcr.microsoft.com/mssql/server:2022-latest")
+        private readonly MsSqlContainer _container = new MsSqlBuilder(SqlServerImage.Reference)
             .Build();
 
         public string ConnectionString => _container.GetConnectionString();

@@ -9,8 +9,7 @@ namespace FactoryApp.Web.Tests;
 
 public class WebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private readonly MsSqlContainer _container = new MsSqlBuilder()
-        .WithImage("mcr.microsoft.com/mssql/server:2022-latest")
+    private readonly MsSqlContainer _container = new MsSqlBuilder(SqlServerImage.Reference)
         .Build();
 
     public async Task InitializeAsync()

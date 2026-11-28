@@ -11,7 +11,7 @@ namespace FactoryApp.Web.Tests;
 [Trait("Category", "Integration")]
 public class FixtureSeederHistoryTests : IAsyncLifetime
 {
-    private readonly MsSqlContainer _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
+    private readonly MsSqlContainer _container = new MsSqlBuilder(SqlServerImage.Reference).Build();
 
     public Task InitializeAsync() => _container.StartAsync();
 
