@@ -100,7 +100,7 @@ dotnet build
 dotnet test
 ```
 
-Docker must be running. The integration tests start SQL Server containers through Testcontainers (see `FactoryApp.Web.Tests/WebAppFactory.cs`), so expect a run of about two minutes. CI (`.github/workflows/ci.yml`) runs `dotnet build -c Release` and `dotnet test -c Release`, then starts SQL Server from `docker-compose.yml` and runs `dotnet ef database update` against it. The tests use the image pinned in that file.
+Docker must be running. The integration tests start SQL Server containers through Testcontainers (see `FactoryApp.Web.Tests/WebAppFactory.cs`), so expect a run of about two minutes. CI (`.github/workflows/ci.yml`) runs `dotnet build -c Release` and `dotnet test -c Release`, then starts SQL Server from `docker-compose.yml` and runs `dotnet ef database update` against it. The tests use the image pinned in that file. A pull request that changes only non-production files (Markdown, `LICENSE`, `.gitignore`, `.gitattributes`, `.mcp.json`, `.claude/`, `scripts/`, `.github/dependabot.yml`) skips these steps; pushes to `main` always run them.
 
 ## Layout
 
