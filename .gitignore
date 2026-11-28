@@ -10,3 +10,8 @@ wwwroot/css/site.css
 
 .code-review-graph
 graphify-out
+
+# Claude Code, machine-local
+.claude/settings.local.json
+CLAUDE.local.md
+.claude/worktrees/
