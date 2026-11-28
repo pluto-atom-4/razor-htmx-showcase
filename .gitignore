@@ -7,3 +7,6 @@ TestResults/
 node_modules/
 wwwroot/css/site.css
 .idea/
+
+.code-review-graph
+graphify-out
